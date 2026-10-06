@@ -137,6 +137,28 @@ terraform apply
 
 **Key output:** SAML IdP ID and space IDs for team collaboration
 
+---
+
+### 7. SAML with Custom Roles (`07_saml_custom_roles.tf`)
+**What it does:** Combines custom roles with SAML IdP configuration to implement fine-grained permission control.
+
+**Use case:** Organizations that need custom permission sets beyond the default roles (admin, member, readOnly, annotator).
+
+**Key concepts:**
+- Creating custom roles with `arize_role`
+- Using custom roles as default for SAML users
+- Combining organization roles with space roles
+- Multi-team setup with different custom roles
+- Permission inheritance and role precedence
+
+**To run:**
+```bash
+terraform plan
+terraform apply
+```
+
+**Key output:** Custom role IDs and team structure with role assignments
+
 **Key concepts:**
 - Using data sources to query existing resources
 - Filtering existing data
