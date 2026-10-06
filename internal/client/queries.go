@@ -5,6 +5,46 @@ import (
 	"fmt"
 )
 
+const getAccountQuery = `
+query GetAccount {
+  account {
+    organizations(first: 1) {
+      edges {
+        node {
+          id
+          name
+        }
+      }
+    }
+  }
+}
+`
+
+func (c *Client) GetAccountOrganization(ctx context.Context) (string, error) {
+	var result struct {
+		Account struct {
+			Organizations struct {
+				Edges []struct {
+					Node struct {
+						ID   string `json:"id"`
+						Name string `json:"name"`
+					} `json:"node"`
+				} `json:"edges"`
+			} `json:"organizations"`
+		} `json:"account"`
+	}
+
+	if err := c.execute(ctx, getAccountQuery, nil, &result); err != nil {
+		return "", fmt.Errorf("failed to get account organization: %w", err)
+	}
+
+	if len(result.Account.Organizations.Edges) == 0 {
+		return "", fmt.Errorf("no organizations found in account")
+	}
+
+	return result.Account.Organizations.Edges[0].Node.ID, nil
+}
+
 const getUserQuery = `
 query GetUser($id: ID!) {
   node(id: $id) {

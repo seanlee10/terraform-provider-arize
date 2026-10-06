@@ -204,7 +204,5 @@ func (r *SpaceResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 }
 
 func (r *SpaceResource) getDefaultOrganizationID(ctx context.Context) (string, error) {
-	// For now, return a hardcoded org ID. In production, we'd query the account to get the default org.
-	// This would typically be cached or retrieved once per provider initialization.
-	return "[REDACTED_ORG_ID]", nil
+	return r.client.GetAccountOrganization(ctx)
 }

@@ -75,11 +75,10 @@ Valid space roles: `admin`, `member`, `readOnly`, `annotator`. These are case-se
 
 ### Known Limitations
 
-1. **Organization ID Hardcoded** - Space creation requires an organization ID, currently hardcoded in `resource_space.go:getDefaultOrganizationID()`. Should be retrieved dynamically from the account.
-2. **Space Updates Not Implemented** - `updateSpace` mutation exists but isn't called; resource.Update() returns error.
-3. **Remove Space Member Not Implemented** - `removeSpaceMember` mutation exists but isn't integrated; deletion is a no-op.
-4. **Roles and API Keys Data Sources Incomplete** - Not currently wired up; queries fail due to missing API endpoints.
-5. **Acceptance Tests Not Implemented** - `resource_*_test.go` files have skeleton tests only.
+1. **Space Updates Not Implemented** - `updateSpace` mutation exists but isn't called; resource.Update() returns error.
+2. **Remove Space Member Not Implemented** - `removeSpaceMember` mutation exists but isn't integrated; deletion is a no-op.
+3. **Roles and API Keys Data Sources Incomplete** - Not currently wired up; queries fail due to missing API endpoints.
+4. **Acceptance Tests Not Implemented** - `resource_*_test.go` files have skeleton tests only.
 
 ## Development Workflow
 
