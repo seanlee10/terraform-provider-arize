@@ -73,7 +73,7 @@ terraform apply
 | Resource | Description |
 |----------|-------------|
 | `arize_user` | Manage users in your Arize account |
-| `arize_role` | Manage custom roles with specific permissions |
+| `arize_role` | Reference roles (custom roles must be created in Arize UI) |
 | `arize_api_key` | Create and manage API keys for automation |
 | `arize_space` | Create and manage ML monitoring spaces |
 | `arize_space_member` | Add users to spaces with role-based access |
