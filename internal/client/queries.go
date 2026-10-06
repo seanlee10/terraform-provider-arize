@@ -7,21 +7,23 @@ import (
 
 const getUserQuery = `
 query GetUser($id: ID!) {
-  user(id: $id) {
-    id
-    email
-    firstName
-    lastName
-    userType
-    createdAt
-    updatedAt
+  node(id: $id) {
+    __typename
+    ... on User {
+      id
+      email
+      name
+      status
+      userType
+      createdAt
+    }
   }
 }
 `
 
 func (c *Client) GetUser(ctx context.Context, userID string) (*User, error) {
 	var result struct {
-		User *User `json:"user"`
+		Node *User `json:"node"`
 	}
 
 	variables := map[string]interface{}{
@@ -32,25 +34,26 @@ func (c *Client) GetUser(ctx context.Context, userID string) (*User, error) {
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	if result.User == nil {
+	if result.Node == nil {
 		return nil, fmt.Errorf("user not found")
 	}
 
-	return result.User, nil
+	return result.Node, nil
 }
 
 const listUsersQuery = `
 query ListUsers($first: Int, $after: String) {
-  users(first: $first, after: $after) {
-    edges {
-      node {
-        id
-        email
-        firstName
-        lastName
-        userType
-        createdAt
-        updatedAt
+  account {
+    users(first: $first, after: $after) {
+      edges {
+        node {
+          id
+          email
+          name
+          status
+          userType
+          createdAt
+        }
       }
     }
   }
@@ -59,11 +62,13 @@ query ListUsers($first: Int, $after: String) {
 
 func (c *Client) ListUsers(ctx context.Context, first int, after string) ([]*User, error) {
 	var result struct {
-		Users struct {
-			Edges []struct {
-				Node *User `json:"node"`
-			} `json:"edges"`
-		} `json:"users"`
+		Account struct {
+			Users struct {
+				Edges []struct {
+					Node *User `json:"node"`
+				} `json:"edges"`
+			} `json:"users"`
+		} `json:"account"`
 	}
 
 	variables := map[string]interface{}{
@@ -78,7 +83,7 @@ func (c *Client) ListUsers(ctx context.Context, first int, after string) ([]*Use
 	}
 
 	users := make([]*User, 0)
-	for _, edge := range result.Users.Edges {
+	for _, edge := range result.Account.Users.Edges {
 		if edge.Node != nil {
 			users = append(users, edge.Node)
 		}

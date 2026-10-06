@@ -25,11 +25,11 @@ type UsersDataSourceModel struct {
 }
 
 type UserDataSourceModel struct {
-	ID        types.String `tfsdk:"id"`
-	Email     types.String `tfsdk:"email"`
-	FirstName types.String `tfsdk:"first_name"`
-	LastName  types.String `tfsdk:"last_name"`
-	UserType  types.String `tfsdk:"user_type"`
+	ID       types.String `tfsdk:"id"`
+	Email    types.String `tfsdk:"email"`
+	Name     types.String `tfsdk:"name"`
+	Status   types.String `tfsdk:"status"`
+	UserType types.String `tfsdk:"user_type"`
 }
 
 func (d *UsersDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
@@ -53,12 +53,12 @@ func (d *UsersDataSource) Schema(ctx context.Context, req datasource.SchemaReque
 							MarkdownDescription: "User email.",
 							Computed:            true,
 						},
-						"first_name": schema.StringAttribute{
-							MarkdownDescription: "User first name.",
+						"name": schema.StringAttribute{
+							MarkdownDescription: "User name.",
 							Computed:            true,
 						},
-						"last_name": schema.StringAttribute{
-							MarkdownDescription: "User last name.",
+						"status": schema.StringAttribute{
+							MarkdownDescription: "User status (active, pending, etc).",
 							Computed:            true,
 						},
 						"user_type": schema.StringAttribute{
@@ -100,11 +100,11 @@ func (d *UsersDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 
 	for _, user := range users {
 		data.Users = append(data.Users, UserDataSourceModel{
-			ID:        types.StringValue(user.ID),
-			Email:     types.StringValue(user.Email),
-			FirstName: types.StringValue(user.FirstName),
-			LastName:  types.StringValue(user.LastName),
-			UserType:  types.StringValue(user.UserType),
+			ID:       types.StringValue(user.ID),
+			Email:    types.StringValue(user.Email),
+			Name:     types.StringValue(user.Name),
+			Status:   types.StringValue(user.Status),
+			UserType: types.StringValue(user.UserType),
 		})
 	}
 

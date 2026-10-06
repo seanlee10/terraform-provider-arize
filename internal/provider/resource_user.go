@@ -26,11 +26,10 @@ type UserResource struct {
 type UserResourceModel struct {
 	ID        types.String `tfsdk:"id"`
 	Email     types.String `tfsdk:"email"`
-	FirstName types.String `tfsdk:"first_name"`
-	LastName  types.String `tfsdk:"last_name"`
+	Name      types.String `tfsdk:"name"`
+	Status    types.String `tfsdk:"status"`
 	UserType  types.String `tfsdk:"user_type"`
 	CreatedAt types.String `tfsdk:"created_at"`
-	UpdatedAt types.String `tfsdk:"updated_at"`
 }
 
 func (r *UserResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -52,13 +51,13 @@ func (r *UserResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 				MarkdownDescription: "The email address of the user.",
 				Required:            true,
 			},
-			"first_name": schema.StringAttribute{
-				MarkdownDescription: "The first name of the user.",
+			"name": schema.StringAttribute{
+				MarkdownDescription: "The full name of the user.",
 				Optional:            true,
 			},
-			"last_name": schema.StringAttribute{
-				MarkdownDescription: "The last name of the user.",
-				Optional:            true,
+			"status": schema.StringAttribute{
+				MarkdownDescription: "The status of the user (active, pending, etc).",
+				Computed:            true,
 			},
 			"user_type": schema.StringAttribute{
 				MarkdownDescription: "The type of user (human or bot). Defaults to human.",
@@ -66,10 +65,6 @@ func (r *UserResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 			},
 			"created_at": schema.StringAttribute{
 				MarkdownDescription: "Timestamp when the user was created.",
-				Computed:            true,
-			},
-			"updated_at": schema.StringAttribute{
-				MarkdownDescription: "Timestamp when the user was last updated.",
 				Computed:            true,
 			},
 		},
@@ -101,9 +96,8 @@ func (r *UserResource) Create(ctx context.Context, req resource.CreateRequest, r
 	}
 
 	input := &client.CreateUserInput{
-		Email:     data.Email.ValueString(),
-		FirstName: data.FirstName.ValueString(),
-		LastName:  data.LastName.ValueString(),
+		Email: data.Email.ValueString(),
+		Name:  data.Name.ValueString(),
 	}
 
 	user, err := r.client.CreateUser(ctx, input)
@@ -113,9 +107,9 @@ func (r *UserResource) Create(ctx context.Context, req resource.CreateRequest, r
 	}
 
 	data.ID = types.StringValue(user.ID)
+	data.Status = types.StringValue(user.Status)
 	data.UserType = types.StringValue(user.UserType)
 	data.CreatedAt = types.StringValue(user.CreatedAt)
-	data.UpdatedAt = types.StringValue(user.UpdatedAt)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -134,11 +128,10 @@ func (r *UserResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 	}
 
 	data.Email = types.StringValue(user.Email)
-	data.FirstName = types.StringValue(user.FirstName)
-	data.LastName = types.StringValue(user.LastName)
+	data.Name = types.StringValue(user.Name)
+	data.Status = types.StringValue(user.Status)
 	data.UserType = types.StringValue(user.UserType)
 	data.CreatedAt = types.StringValue(user.CreatedAt)
-	data.UpdatedAt = types.StringValue(user.UpdatedAt)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -151,17 +144,14 @@ func (r *UserResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	}
 
 	input := &client.UpdateUserInput{
-		FirstName: data.FirstName.ValueString(),
-		LastName:  data.LastName.ValueString(),
+		Name: data.Name.ValueString(),
 	}
 
-	user, err := r.client.UpdateUser(ctx, data.ID.ValueString(), input)
+	_, err := r.client.UpdateUser(ctx, data.ID.ValueString(), input)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to update user", err.Error())
 		return
 	}
-
-	data.UpdatedAt = types.StringValue(user.UpdatedAt)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -190,11 +180,10 @@ func (r *UserResource) ImportState(ctx context.Context, req resource.ImportState
 	data := UserResourceModel{
 		ID:        types.StringValue(user.ID),
 		Email:     types.StringValue(user.Email),
-		FirstName: types.StringValue(user.FirstName),
-		LastName:  types.StringValue(user.LastName),
+		Name:      types.StringValue(user.Name),
+		Status:    types.StringValue(user.Status),
 		UserType:  types.StringValue(user.UserType),
 		CreatedAt: types.StringValue(user.CreatedAt),
-		UpdatedAt: types.StringValue(user.UpdatedAt),
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
