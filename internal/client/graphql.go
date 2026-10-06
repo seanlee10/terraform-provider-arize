@@ -36,7 +36,7 @@ type authTransport struct {
 }
 
 func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", t.apiKey))
+	req.Header.Set("x-api-key", t.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	return t.roundTrip.RoundTrip(req)
 }
