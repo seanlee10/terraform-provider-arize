@@ -1,0 +1,56 @@
+{
+  "version": "0.0.1",
+  "metadata": {
+    "protocol_versions": ["6.0"]
+  },
+  "platforms": [
+    {
+      "os": "linux",
+      "arch": "amd64",
+      "shasum": "",
+      "download_url": "https://github.com/seanlee10/terraform-provider-arize/releases/download/v0.0.1/terraform-provider-arize_0.0.1_linux_amd64.tar.gz",
+      "shasums_url": "https://github.com/seanlee10/terraform-provider-arize/releases/download/v0.0.1/terraform-provider-arize_0.0.1_SHA256SUMS",
+      "shasums_signature_url": "https://github.com/seanlee10/terraform-provider-arize/releases/download/v0.0.1/terraform-provider-arize_0.0.1_SHA256SUMS.sig"
+    },
+    {
+      "os": "linux",
+      "arch": "arm64",
+      "shasum": "",
+      "download_url": "https://github.com/seanlee10/terraform-provider-arize/releases/download/v0.0.1/terraform-provider-arize_0.0.1_linux_arm64.tar.gz",
+      "shasums_url": "https://github.com/seanlee10/terraform-provider-arize/releases/download/v0.0.1/terraform-provider-arize_0.0.1_SHA256SUMS",
+      "shasums_signature_url": "https://github.com/seanlee10/terraform-provider-arize/releases/download/v0.0.1/terraform-provider-arize_0.0.1_SHA256SUMS.sig"
+    },
+    {
+      "os": "darwin",
+      "arch": "amd64",
+      "shasum": "",
+      "download_url": "https://github.com/seanlee10/terraform-provider-arize/releases/download/v0.0.1/terraform-provider-arize_0.0.1_darwin_amd64.tar.gz",
+      "shasums_url": "https://github.com/seanlee10/terraform-provider-arize/releases/download/v0.0.1/terraform-provider-arize_0.0.1_SHA256SUMS",
+      "shasums_signature_url": "https://github.com/seanlee10/terraform-provider-arize/releases/download/v0.0.1/terraform-provider-arize_0.0.1_SHA256SUMS.sig"
+    },
+    {
+      "os": "darwin",
+      "arch": "arm64",
+      "shasum": "",
+      "download_url": "https://github.com/seanlee10/terraform-provider-arize/releases/download/v0.0.1/terraform-provider-arize_0.0.1_darwin_arm64.tar.gz",
+      "shasums_url": "https://github.com/seanlee10/terraform-provider-arize/releases/download/v0.0.1/terraform-provider-arize_0.0.1_SHA256SUMS",
+      "shasums_signature_url": "https://github.com/seanlee10/terraform-provider-arize/releases/download/v0.0.1/terraform-provider-arize_0.0.1_SHA256SUMS.sig"
+    },
+    {
+      "os": "windows",
+      "arch": "amd64",
+      "shasum": "",
+      "download_url": "https://github.com/seanlee10/terraform-provider-arize/releases/download/v0.0.1/terraform-provider-arize_0.0.1_windows_amd64.tar.gz",
+      "shasums_url": "https://github.com/seanlee10/terraform-provider-arize/releases/download/v0.0.1/terraform-provider-arize_0.0.1_SHA256SUMS",
+      "shasums_signature_url": "https://github.com/seanlee10/terraform-provider-arize/releases/download/v0.0.1/terraform-provider-arize_0.0.1_SHA256SUMS.sig"
+    },
+    {
+      "os": "windows",
+      "arch": "arm64",
+      "shasum": "",
+      "download_url": "https://github.com/seanlee10/terraform-provider-arize/releases/download/v0.0.1/terraform-provider-arize_0.0.1_windows_arm64.tar.gz",
+      "shasums_url": "https://github.com/seanlee10/terraform-provider-arize/releases/download/v0.0.1/terraform-provider-arize_0.0.1_SHA256SUMS",
+      "shasums_signature_url": "https://github.com/seanlee10/terraform-provider-arize/releases/download/v0.0.1/terraform-provider-arize_0.0.1_SHA256SUMS.sig"
+    }
+  ]
+}
