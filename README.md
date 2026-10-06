@@ -84,7 +84,7 @@ terraform apply
 | Data Source | Description |
 |-------------|-------------|
 | `arize_users` | Query all users in your account |
-| `arize_roles` | Query all roles in your account |
+| `arize_roles` | Query all roles in your account (including custom roles created in UI) |
 | `arize_api_keys` | Query all API keys in your account |
 
 ## Space Roles
@@ -134,6 +134,35 @@ resource "arize_space_member" "team_member" {
 
 See [SAML SSO example](examples/06_saml_sso_setup.tf) for complete setup.
 
+## Working with Custom Roles
+
+Create custom roles in Arize UI, then reference them in Terraform:
+
+```hcl
+# Query all roles (including custom ones created in UI)
+data "arize_roles" "all" {}
+
+# Create a map for easy reference
+locals {
+  roles = { for role in data.arize_roles.all.roles : role.name => role.id }
+}
+
+# Use in SAML configuration
+resource "arize_saml_idp" "sso" {
+  metadata_url        = "https://idp.company.com/metadata.xml"
+  email_domains_list  = ["company.com"]
+  default_org_role_id = local.roles["data-scientist"]  # Reference by name
+}
+```
+
+**Workflow:**
+1. Create custom roles in **Arize Account Settings → Roles**
+2. Use `data_arize_roles` in Terraform to query them
+3. Reference by name using a local map
+4. Assign to users via SAML or space membership
+
+See [Using Existing Roles example](examples/08_using_existing_roles.tf) for advanced patterns like filtering and permission lookups.
+
 ## Import Existing Resources
 
 Adopt Terraform for your existing Arize infrastructure:
@@ -166,6 +195,8 @@ Browse practical, ready-to-use examples in the [examples/](examples/) directory:
 4. **[Multi-Environment](examples/04_multi_environment.tf)** - Dev/staging/prod with safety checks
 5. **[Importing Resources](examples/05_importing_existing_resources.tf)** - Migrate existing infrastructure to Terraform
 6. **[SAML/SSO Setup](examples/06_saml_sso_setup.tf)** - Enterprise SSO with role mapping and team provisioning
+7. **[SAML with Custom Roles](examples/07_saml_custom_roles.tf)** - Fine-grained permission control with custom roles
+8. **[Using Existing Roles](examples/08_using_existing_roles.tf)** - Query and reference roles created in Arize UI
 
 See [examples/README.md](examples/README.md) for a detailed guide to each example.
 

@@ -159,6 +159,28 @@ terraform apply
 
 **Key output:** Custom role IDs and team structure with role assignments
 
+---
+
+### 8. Using Existing Roles (`08_using_existing_roles.tf`)
+**What it does:** Queries and references roles created in the Arize UI without needing to create them via Terraform.
+
+**Use case:** Working with custom roles that were already created in Arize's web interface.
+
+**Key concepts:**
+- Using `data_arize_roles` data source to read all roles
+- Creating a local map of role names to IDs
+- Filtering roles by permissions or custom attributes
+- Referencing roles by name in SAML and space assignments
+- Best practices for role lookups
+
+**To run:**
+```bash
+terraform plan
+terraform apply
+```
+
+**Key output:** All available roles and their IDs, roles map for easy reference
+
 **Key concepts:**
 - Using data sources to query existing resources
 - Filtering existing data
