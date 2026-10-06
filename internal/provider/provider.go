@@ -83,6 +83,8 @@ func (p *ArizeProvider) Resources(ctx context.Context) []func() resource.Resourc
 		NewUserResource,
 		NewRoleResource,
 		NewAPIKeyResource,
+		NewSpaceResource,
+		NewSpaceMemberResource,
 	}
 }
 

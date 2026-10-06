@@ -299,3 +299,139 @@ func (c *Client) DeleteAPIKey(ctx context.Context, keyID string) error {
 
 	return nil
 }
+
+const createSpaceMutation = `
+mutation CreateSpace($input: CreateSpaceMutationInput!) {
+  createSpace(input: $input) {
+    space {
+      id
+      name
+      uuid
+      description
+      createdAt
+      private
+      organization {
+        id
+        name
+      }
+    }
+  }
+}
+`
+
+func (c *Client) CreateSpace(ctx context.Context, input *CreateSpaceInput) (*Space, error) {
+	var result struct {
+		CreateSpace struct {
+			Space *Space `json:"space"`
+		} `json:"createSpace"`
+	}
+
+	variables := map[string]interface{}{
+		"input": input,
+	}
+
+	if err := c.execute(ctx, createSpaceMutation, variables, &result); err != nil {
+		return nil, fmt.Errorf("failed to create space: %w", err)
+	}
+
+	return result.CreateSpace.Space, nil
+}
+
+const getSpaceQuery = `
+query GetSpace($id: ID!) {
+  node(id: $id) {
+    __typename
+    ... on Space {
+      id
+      name
+      uuid
+      description
+      createdAt
+      private
+      organization {
+        id
+        name
+      }
+    }
+  }
+}
+`
+
+func (c *Client) GetSpace(ctx context.Context, spaceID string) (*Space, error) {
+	var result struct {
+		Node *Space `json:"node"`
+	}
+
+	variables := map[string]interface{}{
+		"id": spaceID,
+	}
+
+	if err := c.execute(ctx, getSpaceQuery, variables, &result); err != nil {
+		return nil, fmt.Errorf("failed to get space: %w", err)
+	}
+
+	if result.Node == nil {
+		return nil, fmt.Errorf("space not found")
+	}
+
+	return result.Node, nil
+}
+
+const deleteSpaceMutation = `
+mutation DeleteSpace($id: ID!) {
+  deleteSpace(input: {id: $id}) {
+    success
+  }
+}
+`
+
+func (c *Client) DeleteSpace(ctx context.Context, spaceID string) error {
+	var result struct {
+		DeleteSpace struct {
+			Success bool `json:"success"`
+		} `json:"deleteSpace"`
+	}
+
+	variables := map[string]interface{}{
+		"id": spaceID,
+	}
+
+	if err := c.execute(ctx, deleteSpaceMutation, variables, &result); err != nil {
+		return fmt.Errorf("failed to delete space: %w", err)
+	}
+
+	return nil
+}
+
+const assignSpaceMembershipMutation = `
+mutation AssignSpaceMembership($input: AssignSpaceMembershipMutationInput!) {
+  assignSpaceMembership(input: $input) {
+    spaceMemberships {
+      id
+      user {
+        id
+        email
+        name
+      }
+    }
+  }
+}
+`
+
+func (c *Client) AssignSpaceMembership(ctx context.Context, input *AssignSpaceMembershipInput) ([]*SpaceMember, error) {
+	var result struct {
+		AssignSpaceMembership struct {
+			SpaceMemberships []*SpaceMember `json:"spaceMemberships"`
+		} `json:"assignSpaceMembership"`
+	}
+
+	variables := map[string]interface{}{
+		"input": input,
+	}
+
+	if err := c.execute(ctx, assignSpaceMembershipMutation, variables, &result); err != nil {
+		return nil, fmt.Errorf("failed to assign space membership: %w", err)
+	}
+
+	return result.AssignSpaceMembership.SpaceMemberships, nil
+}
