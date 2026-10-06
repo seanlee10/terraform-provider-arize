@@ -1,0 +1,20 @@
+# GoReleaser configuration for building cross-platform binaries
+version: 2
+project_name: terraform-provider-arize
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    binary: terraform-provider-arize
+    ldflags:
+      - -X github.com/arize-ai/terraform-provider-arize/internal/provider.providerVersion={{ .Version }}
+
+release:
+  prerelease: auto
