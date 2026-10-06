@@ -114,6 +114,29 @@ terraform apply -var="environment=prod" -var="enable_production_space=true"
 
 **Use case:** Adopting Terraform for an account that already has Arize resources created manually.
 
+---
+
+### 6. SAML/SSO Setup (`06_saml_sso_setup.tf`)
+**What it does:** Configures SAML Identity Provider and sets up automatic user provisioning with role mappings.
+
+**Use case:** Enterprise organizations using Okta, Azure AD, Google Workspace, or other SAML providers for centralized identity management.
+
+**Key concepts:**
+- Configuring SAML metadata URL or raw XML
+- Setting allowed email domains
+- Enabling automatic user provisioning
+- Default role assignment
+- Team space assignments based on SAML groups
+- Centralized identity management
+
+**To run:**
+```bash
+terraform plan
+terraform apply
+```
+
+**Key output:** SAML IdP ID and space IDs for team collaboration
+
 **Key concepts:**
 - Using data sources to query existing resources
 - Filtering existing data
