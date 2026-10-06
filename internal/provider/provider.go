@@ -85,6 +85,7 @@ func (p *ArizeProvider) Resources(ctx context.Context) []func() resource.Resourc
 		NewAPIKeyResource,
 		NewSpaceResource,
 		NewSpaceMemberResource,
+		NewSAMLIdPResource,
 	}
 }
 
