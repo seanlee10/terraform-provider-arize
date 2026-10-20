@@ -86,6 +86,7 @@ func (p *ArizeProvider) Resources(ctx context.Context) []func() resource.Resourc
 		NewSpaceResource,
 		NewSpaceMemberResource,
 		NewSAMLIdPResource,
+		NewEvaluatorResource,
 	}
 }
 
@@ -94,5 +95,6 @@ func (p *ArizeProvider) DataSources(ctx context.Context) []func() datasource.Dat
 		NewUsersDataSource,
 		NewRolesDataSource,
 		NewAPIKeysDataSource,
+		NewEvaluatorsDataSource,
 	}
 }

@@ -73,12 +73,27 @@ query GetUser($id: ID!) {
 
 Valid space roles: `admin`, `member`, `readOnly`, `annotator`. These are case-sensitive enum values used in mutations.
 
+### Evaluators (`resource_evaluator.go`, `client/evaluators.go`)
+
+API behavior verified against the live API, which the resource depends on:
+- Versioned: `editEvaluator` changes only name/description; any config change needs `createEvaluatorVersion` (commit message required). Update compares serialized config inputs to decide whether to publish a version.
+- `dataGranularityType` cannot change after creation, so it is `RequiresReplace`.
+- Evaluator names and result column names (`config.name`) are unique per space.
+- `node(id)` on a deleted evaluator returns "Unauthorized access", not null; `GetEvaluator` confirms absence via `Space.evaluators` before returning `ErrEvaluatorNotFound`.
+- `Space.evaluators(first: 100)` exceeds the query complexity limit (1000); page size is 50.
+- `llmConfig` input requires all four fields (`integrationId`, `modelName`, `invocationParameters`, `providerParameters`); the server rewrites invocation parameters per provider, so Read keeps the configured values.
+- `rails` is ignored by the provider: string input is stored as a single literal element; labels come from `classificationChoices`.
+- Code `spanAttributes` is derived from the `evaluate()` signature (input is ignored), so it is computed.
+- `editEvaluator` cannot clear a description (`""` and `null` are no-ops), so `description` is Optional+Computed with a ModifyPlan warning.
+- Mutation payloads return `config: null`; read back with `GetEvaluator` after create/update.
+
 ### Known Limitations
 
 1. **Space Updates Not Implemented** - `updateSpace` mutation exists but isn't called; resource.Update() returns error.
 2. **Remove Space Member Not Implemented** - `removeSpaceMember` mutation exists but isn't integrated; deletion is a no-op.
 3. **Roles and API Keys Data Sources Incomplete** - Not currently wired up; queries fail due to missing API endpoints.
 4. **Acceptance Tests Not Implemented** - `resource_*_test.go` files have skeleton tests only.
+5. **Evaluator Types** - Only template and code evaluators are supported; harness, remote, and System One evaluators are not.
 
 ## Development Workflow
 

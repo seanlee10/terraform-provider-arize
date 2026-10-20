@@ -181,6 +181,28 @@ terraform apply
 
 **Key output:** All available roles and their IDs, roles map for easy reference
 
+---
+
+### 9. Evaluators (`09_evaluators.tf`)
+**What it does:** Creates LLM-as-judge and Python code evaluators, and lists evaluators already in the space.
+
+**Use case:** Keeping evaluation criteria in version control next to the application they score.
+
+**Key concepts:**
+- `template` evaluators with classification choices and an optional judge model
+- `code` evaluators (Arize derives `span_attributes` from the `evaluate()` signature)
+- Span, trace, or session granularity
+- Config changes publish new evaluator versions with a commit message
+- Importing with `<space_id>/<evaluator_id>`
+
+**To run:**
+```bash
+terraform plan -var="space_id=<space_id>" -var="llm_integration_id=<integration_id>"
+terraform apply -var="space_id=<space_id>" -var="llm_integration_id=<integration_id>"
+```
+
+**Key output:** Evaluator IDs by name, current version number, derived span attributes
+
 **Key concepts:**
 - Using data sources to query existing resources
 - Filtering existing data
