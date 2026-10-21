@@ -34,7 +34,7 @@ locals {
   # Example: Find a specific role
   data_scientist_role_id = local.role_ids["data-scientist"]
   analyst_role_id        = local.role_ids["analyst"]
-  admin_role_id          = local.role_ids["admin"]
+  admin_role_id          = local.role_ids["Account Admin"] # predefined
 }
 
 # ============================================================================
@@ -45,13 +45,13 @@ locals {
   # Find all custom roles (non-predefined)
   custom_roles = [
     for role in data.arize_roles.all.roles :
-    role if !contains(["admin", "member", "readOnly", "annotator"], role.name)
+    role if !role.is_predefined
   ]
 
   # Find roles with specific permissions
   roles_with_write_permission = [
     for role in data.arize_roles.all.roles :
-    role if contains(role.permissions, "write:models")
+    role if contains(role.permissions, "DATASET_CREATE")
   ]
 }
 
@@ -130,19 +130,15 @@ output "roles_with_write_permission" {
     for role in local.roles_with_write_permission :
     role.name => role.id
   }
-  description = "Roles that have write:models permission"
+  description = "Roles that have the DATASET_CREATE permission"
 }
 
 # ============================================================================
 # WORKFLOW: How to Use Existing Roles
 # ============================================================================
 #
-# 1. Create custom roles in Arize UI:
-#    - Go to Account Settings → Roles
-#    - Click "Create Role"
-#    - Name: "data-scientist"
-#    - Select permissions you want
-#    - Save
+# 1. Create custom roles in Arize UI (Account Settings → Roles), or manage
+#    them with the arize_role resource (see example 7)
 #
 # 2. In Terraform:
 #    - Use data "arize_roles" "all" {} to fetch all roles

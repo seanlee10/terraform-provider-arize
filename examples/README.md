@@ -114,6 +114,36 @@ terraform apply -var="environment=prod" -var="enable_production_space=true"
 
 **Use case:** Adopting Terraform for an account that already has Arize resources created manually.
 
+**Key concepts:**
+- Using data sources to query existing resources
+- Filtering existing data
+- Importing resources into Terraform state
+- Managing mix of imported and new resources
+
+**To run:**
+
+First, list existing resources:
+```bash
+terraform plan
+```
+
+Then import specific resources:
+```bash
+# Import a user
+terraform import arize_user.imported_user "user-id-from-arize"
+
+# Import a space
+terraform import arize_space.imported_space "space-id-from-arize"
+```
+
+Finally, add configuration and manage:
+```bash
+terraform plan  # Should show no changes for imported resources
+terraform apply
+```
+
+**Key output:** Analysis of existing users, spaces, and API keys.
+
 ---
 
 ### 6. SAML/SSO Setup (`06_saml_sso_setup.tf`)
@@ -145,7 +175,7 @@ terraform apply
 **Use case:** Organizations that need custom permission sets beyond the default roles (admin, member, readOnly, annotator).
 
 **Key concepts:**
-- Creating custom roles with `arize_role`
+- Creating custom roles and permissions with `arize_role`
 - Using custom roles as default for SAML users
 - Combining organization roles with space roles
 - Multi-team setup with different custom roles
@@ -167,9 +197,9 @@ terraform apply
 **Use case:** Working with custom roles that were already created in Arize's web interface.
 
 **Key concepts:**
-- Using `data_arize_roles` data source to read all roles
+- Using the `arize_roles` data source to read all roles
 - Creating a local map of role names to IDs
-- Filtering roles by permissions or custom attributes
+- Filtering roles by permission or `is_predefined`
 - Referencing roles by name in SAML and space assignments
 - Best practices for role lookups
 
@@ -202,36 +232,6 @@ terraform apply -var="space_id=<space_id>" -var="llm_integration_id=<integration
 ```
 
 **Key output:** Evaluator IDs by name, current version number, derived span attributes
-
-**Key concepts:**
-- Using data sources to query existing resources
-- Filtering existing data
-- Importing resources into Terraform state
-- Managing mix of imported and new resources
-
-**To run:**
-
-First, list existing resources:
-```bash
-terraform plan
-```
-
-Then import specific resources:
-```bash
-# Import a user
-terraform import arize_user.imported_user "user-id-from-arize"
-
-# Import a space
-terraform import arize_space.imported_space "space-id-from-arize"
-```
-
-Finally, add configuration and manage:
-```bash
-terraform plan  # Should show no changes for imported resources
-terraform apply
-```
-
-**Key output:** Analysis of existing users, spaces, and API keys.
 
 ---
 

@@ -18,27 +18,6 @@ type UpdateUserInput struct {
 	Name string `json:"name,omitempty"`
 }
 
-type Role struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	Permissions []string `json:"permissions"`
-	CreatedAt   string   `json:"createdAt"`
-	UpdatedAt   string   `json:"updatedAt"`
-}
-
-type CreateRoleInput struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	Permissions []string `json:"permissions,omitempty"`
-}
-
-type UpdateRoleInput struct {
-	Name        string   `json:"name,omitempty"`
-	Description string   `json:"description,omitempty"`
-	Permissions []string `json:"permissions,omitempty"`
-}
-
 type APIKey struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`

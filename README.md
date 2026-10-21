@@ -9,6 +9,7 @@ Manage your Arize account infrastructure as code with Terraform. Create and mana
 ✅ **User Management** - Create users, query existing users, manage access  
 ✅ **Space Management** - Create and manage ML model monitoring spaces  
 ✅ **Team Access Control** - Assign users to spaces with role-based permissions  
+✅ **Custom Roles** - Define custom roles and their permissions  
 ✅ **SAML/SSO** - Configure SAML identity providers and role mappings for enterprise SSO  
 ✅ **Evaluators** - Version LLM-as-judge and Python code evaluators alongside your app  
 ✅ **API Keys** - Generate and manage service account keys for automation  
@@ -74,7 +75,7 @@ terraform apply
 | Resource | Description |
 |----------|-------------|
 | `arize_user` | Manage users in your Arize account |
-| `arize_role` | Reference roles (custom roles must be created in Arize UI) |
+| `arize_role` | Manage custom roles and their permissions |
 | `arize_api_key` | Create and manage API keys for automation |
 | `arize_space` | Create and manage ML monitoring spaces |
 | `arize_space_member` | Add users to spaces with role-based access |
@@ -86,7 +87,7 @@ terraform apply
 | Data Source | Description |
 |-------------|-------------|
 | `arize_users` | Query all users in your account |
-| `arize_roles` | Query all roles in your account (including custom roles created in UI) |
+| `arize_roles` | Query all predefined and custom roles (including ones created in UI) |
 | `arize_api_keys` | Query all API keys in your account |
 | `arize_evaluators` | List evaluators in a space (including ones created in UI) |
 
@@ -139,10 +140,34 @@ See [SAML SSO example](examples/06_saml_sso_setup.tf) for complete setup.
 
 ## Working with Custom Roles
 
-Create custom roles in Arize UI, then reference them in Terraform:
+Define custom roles and their permissions in Terraform:
 
 ```hcl
-# Query all roles (including custom ones created in UI)
+resource "arize_role" "data_scientist" {
+  name        = "data-scientist"
+  description = "Project, dataset, and experiment access"
+  permissions = [
+    "PROJECT_READ",
+    "DATASET_READ",
+    "DATASET_CREATE",
+    "EXPERIMENT_READ",
+    "EXPERIMENT_CREATE",
+  ]
+}
+
+resource "arize_saml_idp" "sso" {
+  metadata_url        = "https://idp.company.com/metadata.xml"
+  email_domains_list  = ["company.com"]
+  default_org_role_id = arize_role.data_scientist.id
+}
+```
+
+Permissions are identifiers such as `PROJECT_READ`, `DATASET_CREATE`, or `MONITOR_UPDATE`; the API rejects unknown values. Predefined roles (Account Admin, Space Member, and so on) can't be managed, only looked up.
+
+To reference roles created in the Arize UI, or predefined roles, use the data source:
+
+```hcl
+# Query all roles (predefined and custom)
 data "arize_roles" "all" {}
 
 # Create a map for easy reference
@@ -158,13 +183,9 @@ resource "arize_saml_idp" "sso" {
 }
 ```
 
-**Workflow:**
-1. Create custom roles in **Arize Account Settings → Roles**
-2. Use `data_arize_roles` in Terraform to query them
-3. Reference by name using a local map
-4. Assign to users via SAML or space membership
+Each role in `data.arize_roles.all.roles` has `id`, `name`, `description`, `permissions`, and `is_predefined`.
 
-See [Using Existing Roles example](examples/08_using_existing_roles.tf) for advanced patterns like filtering and permission lookups.
+See [SAML with Custom Roles](examples/07_saml_custom_roles.tf) and [Using Existing Roles](examples/08_using_existing_roles.tf) for more patterns.
 
 ## Evaluators
 
@@ -231,6 +252,9 @@ terraform import arize_space.prod "<space_id>"
 
 # Import an API key
 terraform import arize_api_key.service "<api_key_id>"
+
+# Import a custom role
+terraform import arize_role.data_scientist "<role_id>"
 
 # Import an evaluator (space ID / evaluator ID)
 terraform import arize_evaluator.correctness "<space_id>/<evaluator_id>"
@@ -336,6 +360,10 @@ provider "arize" {
   # GraphQL endpoint
   # Optional: defaults to https://app.arize.com/graphql
   endpoint = "https://app.arize.com/graphql"
+
+  # REST API base URL (used for custom roles)
+  # Optional: defaults to https://api.arize.com
+  rest_endpoint = "https://api.arize.com"
 }
 ```
 

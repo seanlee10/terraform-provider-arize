@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Terraform provider for Arize, enabling Infrastructure as Code management of Arize resources (users, roles, API keys, spaces, and space memberships). It uses the Terraform Plugin Framework (Go-based) and communicates with Arize's GraphQL API.
+This is a Terraform provider for Arize, enabling Infrastructure as Code management of Arize resources (users, custom roles, API keys, spaces, space memberships, SAML IdPs, and evaluators). It uses the Terraform Plugin Framework (Go-based) and communicates with Arize's GraphQL API, plus the REST API for custom roles.
 
 ## Architecture
 
@@ -39,16 +39,17 @@ Arize GraphQL API (app.arize.com/graphql)
 - `graphql.go` - HTTP client with x-api-key authentication
 - `queries.go` - GraphQL read operations (GetUser, ListUsers, etc.)
 - `mutations.go` - GraphQL write operations (CreateUser, AssignSpaceMembership, etc.)
-- `models.go` - Data structures for users, roles, API keys
+- `models.go` - Data structures for users, API keys
+- `rest.go`, `roles.go` - REST client (Bearer auth) and custom role CRUD
 - `models_space.go` - Data structures for spaces and space members
 
 ### Critical API Knowledge
 
 **Authentication Header**
-Arize uses `x-api-key` header, NOT `Authorization: Bearer`. This is different from many GraphQL APIs and is easy to get wrong.
+The GraphQL API uses the `x-api-key` header, NOT `Authorization: Bearer`. This is different from many GraphQL APIs and is easy to get wrong. The REST API (`api.arize.com/v2`, `client/rest.go`) uses `Authorization: Bearer <same key>`.
 
 **Query Patterns**
-- **List resources**: Via `account.users`, `account.roles`, etc. (not root-level queries)
+- **List resources**: Via `account.users`, `space.evaluators`, etc. (not root-level queries)
 - **Get single resource**: Via `node(id)` query with GraphQL fragments (e.g., `... on User { ... }`)
 - **Create/update**: Via mutations with `Input` types
 
@@ -73,6 +74,14 @@ query GetUser($id: ID!) {
 
 Valid space roles: `admin`, `member`, `readOnly`, `annotator`. These are case-sensitive enum values used in mutations.
 
+### Roles (`resource_role.go`, `client/roles.go`)
+
+GraphQL has no role list or mutations (roles are reachable only via `node(id)` and `SpaceUser.customRole`), so roles use the REST API `/v2/roles`:
+- `PATCH` replaces `permissions` as a whole and `"description": null` clears the description; `UpdateRoleInput` always sends all fields.
+- Errors are problem-details JSON (`{status, title, detail}`): 409 on duplicate name, 422 on unknown permission, 403 on predefined roles, 404 when missing.
+- Predefined roles (`is_predefined`) are read-only; Read errors if a managed role turns out to be predefined.
+- `permissions` is a Set since the server's order isn't meaningful.
+
 ### Evaluators (`resource_evaluator.go`, `client/evaluators.go`)
 
 API behavior verified against the live API, which the resource depends on:
@@ -91,7 +100,7 @@ API behavior verified against the live API, which the resource depends on:
 
 1. **Space Updates Not Implemented** - `updateSpace` mutation exists but isn't called; resource.Update() returns error.
 2. **Remove Space Member Not Implemented** - `removeSpaceMember` mutation exists but isn't integrated; deletion is a no-op.
-3. **Roles and API Keys Data Sources Incomplete** - Not currently wired up; queries fail due to missing API endpoints.
+3. **API Keys Data Source Incomplete** - Not currently wired up; queries fail due to missing API endpoints.
 4. **Acceptance Tests Not Implemented** - `resource_*_test.go` files have skeleton tests only.
 5. **Evaluator Types** - Only template and code evaluators are supported; harness, remote, and System One evaluators are not.
 

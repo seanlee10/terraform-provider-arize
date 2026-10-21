@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/arize-ai/terraform-provider-arize/internal/client"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/arize-ai/terraform-provider-arize/internal/client"
 )
 
 var _ datasource.DataSource = (*RolesDataSource)(nil)
@@ -17,7 +17,7 @@ func NewRolesDataSource() datasource.DataSource {
 }
 
 type RolesDataSource struct {
-	client *client.Client
+	client *client.RESTClient
 }
 
 type RolesDataSourceModel struct {
@@ -25,10 +25,11 @@ type RolesDataSourceModel struct {
 }
 
 type RoleDataSourceModel struct {
-	ID          types.String `tfsdk:"id"`
-	Name        types.String `tfsdk:"name"`
-	Description types.String `tfsdk:"description"`
-	Permissions types.List   `tfsdk:"permissions"`
+	ID           types.String `tfsdk:"id"`
+	Name         types.String `tfsdk:"name"`
+	Description  types.String `tfsdk:"description"`
+	Permissions  types.Set    `tfsdk:"permissions"`
+	IsPredefined types.Bool   `tfsdk:"is_predefined"`
 }
 
 func (d *RolesDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
@@ -37,7 +38,7 @@ func (d *RolesDataSource) Metadata(ctx context.Context, req datasource.MetadataR
 
 func (d *RolesDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Fetch all roles from Arize.",
+		MarkdownDescription: "Lists all predefined and custom roles in the Arize account, including ones created in the Arize UI.",
 		Attributes: map[string]schema.Attribute{
 			"roles": schema.ListNestedAttribute{
 				MarkdownDescription: "List of roles.",
@@ -56,9 +57,13 @@ func (d *RolesDataSource) Schema(ctx context.Context, req datasource.SchemaReque
 							MarkdownDescription: "Role description.",
 							Computed:            true,
 						},
-						"permissions": schema.ListAttribute{
+						"permissions": schema.SetAttribute{
 							ElementType:         types.StringType,
-							MarkdownDescription: "Role permissions.",
+							MarkdownDescription: "Permissions granted by the role.",
+							Computed:            true,
+						},
+						"is_predefined": schema.BoolAttribute{
+							MarkdownDescription: "Whether this is a predefined Arize role (read-only) rather than a custom role.",
 							Computed:            true,
 						},
 					},
@@ -82,25 +87,28 @@ func (d *RolesDataSource) Configure(ctx context.Context, req datasource.Configur
 		return
 	}
 
-	d.client = client.New(config.Endpoint.ValueString(), config.APIKey.ValueString())
+	d.client = client.NewREST(config.RESTEndpoint.ValueString(), config.APIKey.ValueString())
 }
 
 func (d *RolesDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var data RolesDataSourceModel
 
-	roles, err := d.client.ListRoles(ctx, 100, "")
+	roles, err := d.client.ListRoles(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to list roles", err.Error())
 		return
 	}
 
+	data.Roles = make([]RoleDataSourceModel, 0, len(roles))
 	for _, role := range roles {
-		permsValue, _ := types.ListValueFrom(ctx, types.StringType, role.Permissions)
+		perms, diags := types.SetValueFrom(ctx, types.StringType, role.Permissions)
+		resp.Diagnostics.Append(diags...)
 		data.Roles = append(data.Roles, RoleDataSourceModel{
-			ID:          types.StringValue(role.ID),
-			Name:        types.StringValue(role.Name),
-			Description: types.StringValue(role.Description),
-			Permissions: permsValue,
+			ID:           types.StringValue(role.ID),
+			Name:         types.StringValue(role.Name),
+			Description:  types.StringPointerValue(role.Description),
+			Permissions:  perms,
+			IsPredefined: types.BoolValue(role.IsPredefined),
 		})
 	}
 

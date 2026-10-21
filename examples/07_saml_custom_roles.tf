@@ -18,20 +18,42 @@ provider "arize" {}
 # Custom role for data scientists with specific permissions
 resource "arize_role" "data_scientist" {
   name        = "data-scientist"
-  description = "Data scientist role with model monitoring permissions"
-  # permissions = [...]  # Define specific permissions as needed
+  description = "Data scientist role with project, dataset, and experiment access"
+  permissions = [
+    "PROJECT_READ",
+    "PROJECT_SPAN_READ",
+    "PROJECT_SPAN_ANNOTATE",
+    "DATASET_READ",
+    "DATASET_CREATE",
+    "EXPERIMENT_READ",
+    "EXPERIMENT_CREATE",
+    "EVALUATOR_READ",
+  ]
 }
 
 # Custom role for ML operations team
 resource "arize_role" "ml_ops_engineer" {
   name        = "ml-ops-engineer"
-  description = "ML operations engineer with deployment and monitoring access"
+  description = "ML operations engineer with monitoring and evaluator access"
+  permissions = [
+    "PROJECT_READ",
+    "MONITOR_READ",
+    "MONITOR_CREATE",
+    "MONITOR_UPDATE",
+    "EVALUATOR_READ",
+    "EVALUATOR_CREATE",
+    "EVALUATOR_UPDATE",
+  ]
 }
 
 # Custom role for data analysts - read-only access
 resource "arize_role" "analyst" {
   name        = "analyst"
   description = "Analyst role with read-only access to dashboards"
+  permissions = [
+    "DASHBOARD_READ",
+    "PROJECT_READ",
+  ]
 }
 
 # ============================================================================

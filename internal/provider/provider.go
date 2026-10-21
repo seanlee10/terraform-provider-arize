@@ -20,8 +20,9 @@ type ArizeProvider struct {
 }
 
 type ArizeProviderModel struct {
-	APIKey   types.String `tfsdk:"api_key"`
-	Endpoint types.String `tfsdk:"endpoint"`
+	APIKey       types.String `tfsdk:"api_key"`
+	Endpoint     types.String `tfsdk:"endpoint"`
+	RESTEndpoint types.String `tfsdk:"rest_endpoint"`
 }
 
 func New(version string) func() provider.Provider {
@@ -49,6 +50,10 @@ func (p *ArizeProvider) Schema(ctx context.Context, req provider.SchemaRequest, 
 				MarkdownDescription: "Arize GraphQL endpoint. Defaults to https://app.arize.com/graphql.",
 				Optional:            true,
 			},
+			"rest_endpoint": schema.StringAttribute{
+				MarkdownDescription: "Arize REST API base URL, used for custom roles. Defaults to https://api.arize.com.",
+				Optional:            true,
+			},
 		},
 	}
 }
@@ -71,6 +76,9 @@ func (p *ArizeProvider) Configure(ctx context.Context, req provider.ConfigureReq
 	// Set default endpoint
 	if config.Endpoint.IsNull() {
 		config.Endpoint = types.StringValue("https://app.arize.com/graphql")
+	}
+	if config.RESTEndpoint.IsNull() {
+		config.RESTEndpoint = types.StringValue("https://api.arize.com")
 	}
 
 	// Store config for resources to use

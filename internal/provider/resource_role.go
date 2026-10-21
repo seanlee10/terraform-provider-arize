@@ -2,14 +2,20 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/arize-ai/terraform-provider-arize/internal/client"
+	"github.com/hashicorp/terraform-plugin-framework-validators/setvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/arize-ai/terraform-provider-arize/internal/client"
 )
 
 var _ resource.Resource = (*RoleResource)(nil)
@@ -20,14 +26,14 @@ func NewRoleResource() resource.Resource {
 }
 
 type RoleResource struct {
-	client *client.Client
+	client *client.RESTClient
 }
 
 type RoleResourceModel struct {
 	ID          types.String `tfsdk:"id"`
 	Name        types.String `tfsdk:"name"`
 	Description types.String `tfsdk:"description"`
-	Permissions types.List   `tfsdk:"permissions"`
+	Permissions types.Set    `tfsdk:"permissions"`
 	CreatedAt   types.String `tfsdk:"created_at"`
 	UpdatedAt   types.String `tfsdk:"updated_at"`
 }
@@ -38,7 +44,7 @@ func (r *RoleResource) Metadata(ctx context.Context, req resource.MetadataReques
 
 func (r *RoleResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Manages an Arize role.",
+		MarkdownDescription: "Manages a custom Arize role. Predefined roles are read-only; look them up with the `arize_roles` data source.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				MarkdownDescription: "The unique identifier for the role.",
@@ -48,21 +54,33 @@ func (r *RoleResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 				},
 			},
 			"name": schema.StringAttribute{
-				MarkdownDescription: "The name of the role.",
+				MarkdownDescription: "The name of the role. Must be unique within the account.",
 				Required:            true,
+				Validators: []validator.String{
+					stringvalidator.LengthBetween(1, 255),
+				},
 			},
 			"description": schema.StringAttribute{
 				MarkdownDescription: "A description of the role.",
 				Optional:            true,
+				Validators: []validator.String{
+					stringvalidator.LengthBetween(1, 1000),
+				},
 			},
-			"permissions": schema.ListAttribute{
+			"permissions": schema.SetAttribute{
 				ElementType:         types.StringType,
-				MarkdownDescription: "List of permissions for this role.",
-				Optional:            true,
+				MarkdownDescription: "Permissions granted by the role, e.g. `PROJECT_READ`, `DATASET_CREATE`. At least one is required.",
+				Required:            true,
+				Validators: []validator.Set{
+					setvalidator.SizeAtLeast(1),
+				},
 			},
 			"created_at": schema.StringAttribute{
 				MarkdownDescription: "Timestamp when the role was created.",
 				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"updated_at": schema.StringAttribute{
 				MarkdownDescription: "Timestamp when the role was last updated.",
@@ -86,7 +104,7 @@ func (r *RoleResource) Configure(ctx context.Context, req resource.ConfigureRequ
 		return
 	}
 
-	r.client = client.New(config.Endpoint.ValueString(), config.APIKey.ValueString())
+	r.client = client.NewREST(config.RESTEndpoint.ValueString(), config.APIKey.ValueString())
 }
 
 func (r *RoleResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -102,22 +120,17 @@ func (r *RoleResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
-	input := &client.CreateRoleInput{
+	role, err := r.client.CreateRole(ctx, &client.CreateRoleInput{
 		Name:        data.Name.ValueString(),
-		Description: data.Description.ValueString(),
+		Description: data.Description.ValueStringPointer(),
 		Permissions: permissions,
-	}
-
-	role, err := r.client.CreateRole(ctx, input)
+	})
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create role", err.Error())
 		return
 	}
 
-	data.ID = types.StringValue(role.ID)
-	data.CreatedAt = types.StringValue(role.CreatedAt)
-	data.UpdatedAt = types.StringValue(role.UpdatedAt)
-
+	resp.Diagnostics.Append(applyRole(ctx, &data, role)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -129,18 +142,23 @@ func (r *RoleResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 	}
 
 	role, err := r.client.GetRole(ctx, data.ID.ValueString())
+	if errors.Is(err, client.ErrRoleNotFound) {
+		resp.State.RemoveResource(ctx)
+		return
+	}
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to read role", err.Error())
 		return
 	}
+	if role.IsPredefined {
+		resp.Diagnostics.AddError(
+			"Predefined role",
+			fmt.Sprintf("Role %q is a predefined Arize role and cannot be managed. Look it up with the arize_roles data source instead.", role.Name),
+		)
+		return
+	}
 
-	data.Name = types.StringValue(role.Name)
-	data.Description = types.StringValue(role.Description)
-	permsValue, _ := types.ListValueFrom(ctx, types.StringType, role.Permissions)
-	data.Permissions = permsValue
-	data.CreatedAt = types.StringValue(role.CreatedAt)
-	data.UpdatedAt = types.StringValue(role.UpdatedAt)
-
+	resp.Diagnostics.Append(applyRole(ctx, &data, role)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -157,20 +175,17 @@ func (r *RoleResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	input := &client.UpdateRoleInput{
+	role, err := r.client.UpdateRole(ctx, data.ID.ValueString(), &client.UpdateRoleInput{
 		Name:        data.Name.ValueString(),
-		Description: data.Description.ValueString(),
+		Description: data.Description.ValueStringPointer(),
 		Permissions: permissions,
-	}
-
-	role, err := r.client.UpdateRole(ctx, data.ID.ValueString(), input)
+	})
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to update role", err.Error())
 		return
 	}
 
-	data.UpdatedAt = types.StringValue(role.UpdatedAt)
-
+	resp.Diagnostics.Append(applyRole(ctx, &data, role)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -188,22 +203,16 @@ func (r *RoleResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 }
 
 func (r *RoleResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	roleID := req.ID
-	role, err := r.client.GetRole(ctx, roleID)
-	if err != nil {
-		resp.Diagnostics.AddError("Failed to import role", err.Error())
-		return
-	}
+	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
 
-	permsValue, _ := types.ListValueFrom(ctx, types.StringType, role.Permissions)
-	data := RoleResourceModel{
-		ID:          types.StringValue(role.ID),
-		Name:        types.StringValue(role.Name),
-		Description: types.StringValue(role.Description),
-		Permissions: permsValue,
-		CreatedAt:   types.StringValue(role.CreatedAt),
-		UpdatedAt:   types.StringValue(role.UpdatedAt),
-	}
-
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+func applyRole(ctx context.Context, data *RoleResourceModel, role *client.Role) diag.Diagnostics {
+	perms, diags := types.SetValueFrom(ctx, types.StringType, role.Permissions)
+	data.ID = types.StringValue(role.ID)
+	data.Name = types.StringValue(role.Name)
+	data.Description = types.StringPointerValue(role.Description)
+	data.Permissions = perms
+	data.CreatedAt = types.StringValue(role.CreatedAt)
+	data.UpdatedAt = types.StringValue(role.UpdatedAt)
+	return diags
 }
