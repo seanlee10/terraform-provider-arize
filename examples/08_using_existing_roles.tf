@@ -12,6 +12,11 @@ terraform {
 
 provider "arize" {}
 
+variable "org_id" {
+  description = "Arize organization that SAML users join (Settings -> Organizations)"
+  type        = string
+}
+
 # ============================================================================
 # STEP 1: Read All Roles from Arize
 # ============================================================================
@@ -64,11 +69,17 @@ resource "arize_saml_idp" "company_saml" {
 
   email_domains_list = ["company.com"]
 
-  # Use the data scientist role created in Arize UI
-  default_org_role_id = local.data_scientist_role_id
-
   enforce_saml    = false
   sync_user_roles = true
+
+  # Give the IdP's data-science group the custom role created in the Arize UI.
+  # Custom roles apply per space; org_role must be a built-in name.
+  role_mappings = [{
+    attributes         = { groups = "data-science" }
+    org_id             = var.org_id
+    org_role           = "member"
+    space_custom_roles = { (arize_space.data_science.id) = local.data_scientist_role_id }
+  }]
 }
 
 # ============================================================================
@@ -167,9 +178,14 @@ output "roles_with_write_permission" {
 # }
 #
 # resource "arize_saml_idp" "sso" {
-#   metadata_url        = "..."
-#   email_domains_list  = ["company.com"]
-#   default_org_role_id = local.my_role.id
+#   metadata_url       = "..."
+#   email_domains_list = ["company.com"]
+#   role_mappings = [{
+#     attributes         = { groups = "data-science" }
+#     org_id             = var.org_id
+#     org_role           = "member"
+#     space_custom_roles = { (arize_space.data_science.id) = local.my_role.id }
+#   }]
 # }
 #
 # ============================================================================

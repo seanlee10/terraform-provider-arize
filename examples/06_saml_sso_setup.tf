@@ -11,6 +11,11 @@ terraform {
 
 provider "arize" {}
 
+variable "org_id" {
+  description = "Arize organization that SAML users join (Settings -> Organizations)"
+  type        = string
+}
+
 # ============================================================================
 # STEP 1: Configure SAML Identity Provider
 # ============================================================================
@@ -29,14 +34,42 @@ resource "arize_saml_idp" "company_saml" {
   # Enforce SAML login - when true, users can only login via SAML
   enforce_saml = false
 
-  # Automatically sync user roles from SAML attributes
+  # Re-apply role mappings on every login, so IdP group changes take effect
   sync_user_roles = true
 
-  # Default role for users without explicit mapping
-  default_org_role_id = "admin"
+  # Map IdP groups to Arize roles. Org and space roles here are built-in
+  # names: admin, member, readOnly, annotator.
+  role_mappings = [
+    {
+      attributes  = { groups = "arize-data-science" }
+      org_id      = var.org_id
+      org_role    = "member"
+      space_roles = { (arize_space.data_science.id) = "admin" }
+    },
+    {
+      attributes  = { groups = "arize-ml-ops" }
+      org_id      = var.org_id
+      org_role    = "member"
+      space_roles = { (arize_space.ml_ops.id) = "member" }
+    },
+    {
+      attributes  = { groups = "arize-analytics" }
+      org_id      = var.org_id
+      org_role    = "readOnly"
+      space_roles = { (arize_space.analytics.id) = "readOnly" }
+    },
+    {
+      attributes       = { groups = "arize-admins" }
+      is_account_admin = true
+    },
+  ]
 
-  # Allow login with defaults if no specific mapping exists
-  allow_login_with_defaults = true
+  # Users in none of the groups above are rejected. To let them in instead,
+  # set allow_login_with_defaults = true plus all four default_* attributes:
+  #   default_org_id        = var.org_id
+  #   default_org_role_id   = "readOnly"
+  #   default_space_id      = arize_space.analytics.id
+  #   default_space_role_id = "readOnly"
 }
 
 # ============================================================================
@@ -148,18 +181,20 @@ output "users" {
 #
 # 1. Configure SAML IdP with metadata URL or XML
 #    - Set email domains that are allowed
-#    - Set default role for unmapped users
-#    - Enable sync_user_roles to map SAML attributes to Arize roles
+#    - Map IdP groups (SAML attributes) to Arize roles with role_mappings
+#    - Enable sync_user_roles to re-apply mappings on every login
 #
 # 2. First SAML login:
 #    - User logs in through your identity provider (Okta, Azure AD, etc)
 #    - Arize receives SAML assertion with user attributes
-#    - User is auto-created in Arize with default role
+#    - User is auto-created in Arize with the roles of the matching mapping
 #    - User can be assigned to spaces with terraform apply
 #
 # 3. Role mapping:
-#    - For simple setups: use default_org_role_id + space assignments
-#    - For complex setups: use SAML attributes mapping (requires API extensions)
+#    - role_mappings: per-group org, space, and project roles
+#    - allow_login_with_defaults + default_*: one role set for everyone else
+#    - Destroying arize_saml_idp only removes it from state; the Arize API
+#      cannot delete an IdP, so delete it in the Arize UI
 #
 # 4. Subsequent logins:
 #    - User logs in via SAML and gets provisioned automatically

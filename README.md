@@ -115,20 +115,30 @@ resource "arize_saml_idp" "company_saml" {
   # Enforce SAML login (optional)
   enforce_saml = false
 
-  # Automatically sync user roles from SAML attributes
+  # Re-apply role mappings on every login
   sync_user_roles = true
 
-  # Default role for users without explicit mapping
-  default_org_role_id = "member"
-}
-
-# Then assign users to spaces after SAML login
-resource "arize_space_member" "team_member" {
-  space_id = arize_space.ml_models.id
-  user_id  = arize_user.alice.id
-  role     = "admin"
+  # Map IdP groups (SAML attributes) to Arize roles
+  role_mappings = [
+    {
+      attributes  = { groups = "ml-team" }
+      org_id      = var.org_id
+      org_role    = "member"
+      space_roles = { (arize_space.ml_models.id) = "admin" }
+    },
+    {
+      attributes       = { groups = "arize-admins" }
+      is_account_admin = true
+    },
+  ]
 }
 ```
+
+Org and space roles in `role_mappings` and the `default_*` settings are built-in names: `admin`, `member`, `readOnly`, `annotator`. Users who match no mapping are rejected unless `allow_login_with_defaults = true`, which requires all four of `default_org_id`, `default_org_role_id`, `default_space_id`, and `default_space_role_id`.
+
+**Limitations:**
+- The Arize API cannot delete a SAML IdP. `terraform destroy` removes it from state only (with a warning); delete it in the Arize UI.
+- Each apply sends the whole IdP configuration, so changes made in the Arize UI are overwritten.
 
 **Benefits:**
 - Centralized identity management (Okta, Azure AD, Google Workspace, etc.)
@@ -155,14 +165,23 @@ resource "arize_role" "data_scientist" {
   ]
 }
 
+# Grant the custom role in a space to an IdP group
 resource "arize_saml_idp" "sso" {
-  metadata_url        = "https://idp.company.com/metadata.xml"
-  email_domains_list  = ["company.com"]
-  default_org_role_id = arize_role.data_scientist.id
+  metadata_url       = "https://idp.company.com/metadata.xml"
+  email_domains_list = ["company.com"]
+
+  role_mappings = [{
+    attributes         = { groups = "data-science" }
+    org_id             = var.org_id
+    org_role           = "member"
+    space_custom_roles = { (arize_space.ml_models.id) = arize_role.data_scientist.id }
+  }]
 }
 ```
 
 Permissions are identifiers such as `PROJECT_READ`, `DATASET_CREATE`, or `MONITOR_UPDATE`; the API rejects unknown values. Predefined roles (Account Admin, Space Member, and so on) can't be managed, only looked up.
+
+Custom roles apply per space (`space_custom_roles`) or per project (`project_roles`). Arize rejects them as `org_role` or as a `default_*_role_id`.
 
 To reference roles created in the Arize UI, or predefined roles, use the data source:
 
@@ -175,11 +194,17 @@ locals {
   roles = { for role in data.arize_roles.all.roles : role.name => role.id }
 }
 
-# Use in SAML configuration
+# Reference a UI-created role by name
 resource "arize_saml_idp" "sso" {
-  metadata_url        = "https://idp.company.com/metadata.xml"
-  email_domains_list  = ["company.com"]
-  default_org_role_id = local.roles["data-scientist"]  # Reference by name
+  metadata_url       = "https://idp.company.com/metadata.xml"
+  email_domains_list = ["company.com"]
+
+  role_mappings = [{
+    attributes         = { groups = "data-science" }
+    org_id             = var.org_id
+    org_role           = "member"
+    space_custom_roles = { (arize_space.ml_models.id) = local.roles["data-scientist"] }
+  }]
 }
 ```
 

@@ -82,6 +82,17 @@ GraphQL has no role list or mutations (roles are reachable only via `node(id)` a
 - Predefined roles (`is_predefined`) are read-only; Read errors if a managed role turns out to be predefined.
 - `permissions` is a Set since the server's order isn't meaningful.
 
+### SAML IdP (`resource_saml_idp.go`, `client/mutations_saml.go`)
+
+Verified against the live API:
+- No delete mutation exists; Delete warns and removes from state only.
+- `node(id)` returns null for SAML IdPs, so `GetSAMLIdP` searches `account.samlIdPs`.
+- `updateSAMLIdP` replaces the whole IdP: omitted fields reset (email domains, role mappings, defaults). Every apply sends the full config, so the optional attributes are plain Optional (removing one clears it).
+- Payloads are `{ error, idp }`; validation failures arrive in `error`, not GraphQL errors. "An error occurred while configuring SAML authentication" usually means an invalid role ID.
+- `default_org_role_id` / `default_space_role_id` and mapping `orgRole.roleId` accept only built-in names (`admin`, `member`, `readOnly`, `annotator`); custom role IDs work only in `spaceRbacRolesMap` / `projectRolesMap`.
+- `allowLoginWithDefaults: true` requires all four `default*` fields; `false` requires at least one role mapping, and each mapping needs `orgRole` unless `isAccountAdmin`.
+- `*Map` fields are `[key, value]` tuple lists; the server sorts `attributesMap` by key. Unset strings come back as `""`.
+
 ### Evaluators (`resource_evaluator.go`, `client/evaluators.go`)
 
 API behavior verified against the live API, which the resource depends on:

@@ -154,15 +154,14 @@ terraform apply
 **Key concepts:**
 - Configuring SAML metadata URL or raw XML
 - Setting allowed email domains
-- Enabling automatic user provisioning
-- Default role assignment
-- Team space assignments based on SAML groups
-- Centralized identity management
+- Mapping IdP groups to org and space roles with `role_mappings`
+- Optional default roles for users matching no mapping
+- Why `terraform destroy` leaves the IdP in Arize
 
 **To run:**
 ```bash
-terraform plan
-terraform apply
+terraform plan -var="org_id=<org_id>"
+terraform apply -var="org_id=<org_id>"
 ```
 
 **Key output:** SAML IdP ID and space IDs for team collaboration
@@ -176,15 +175,14 @@ terraform apply
 
 **Key concepts:**
 - Creating custom roles and permissions with `arize_role`
-- Using custom roles as default for SAML users
-- Combining organization roles with space roles
+- Granting custom roles per space to IdP groups (`space_custom_roles`)
+- Combining built-in organization roles with custom space roles
 - Multi-team setup with different custom roles
-- Permission inheritance and role precedence
 
 **To run:**
 ```bash
-terraform plan
-terraform apply
+terraform plan -var="org_id=<org_id>"
+terraform apply -var="org_id=<org_id>"
 ```
 
 **Key output:** Custom role IDs and team structure with role assignments
@@ -205,8 +203,8 @@ terraform apply
 
 **To run:**
 ```bash
-terraform plan
-terraform apply
+terraform plan -var="org_id=<org_id>"
+terraform apply -var="org_id=<org_id>"
 ```
 
 **Key output:** All available roles and their IDs, roles map for easy reference

@@ -11,6 +11,11 @@ terraform {
 
 provider "arize" {}
 
+variable "org_id" {
+  description = "Arize organization that SAML users join (Settings -> Organizations)"
+  type        = string
+}
+
 # ============================================================================
 # STEP 1: Create Custom Roles
 # ============================================================================
@@ -57,21 +62,40 @@ resource "arize_role" "analyst" {
 }
 
 # ============================================================================
-# STEP 2: Configure SAML IdP with Custom Default Role
+# STEP 2: Map IdP Groups to Custom Roles
 # ============================================================================
 
+# Custom roles apply per space (space_custom_roles) or per project. The
+# organization role (org_role) and the default_* roles must be built-in
+# names: admin, member, readOnly, annotator.
 resource "arize_saml_idp" "company_saml" {
   metadata_url = "https://idp.company.com/metadata.xml"
 
   email_domains_list = ["company.com"]
 
-  # Use custom role as default for all SAML users
-  # This role ID comes from the arize_role resource above
-  default_org_role_id = arize_role.data_scientist.id
+  enforce_saml    = false
+  sync_user_roles = true
 
-  enforce_saml        = false
-  sync_user_roles     = true
-  allow_login_with_defaults = true
+  role_mappings = [
+    {
+      attributes         = { groups = "data-science" }
+      org_id             = var.org_id
+      org_role           = "member"
+      space_custom_roles = { (arize_space.data_science_team.id) = arize_role.data_scientist.id }
+    },
+    {
+      attributes         = { groups = "ml-ops" }
+      org_id             = var.org_id
+      org_role           = "member"
+      space_custom_roles = { (arize_space.ml_ops_team.id) = arize_role.ml_ops_engineer.id }
+    },
+    {
+      attributes         = { groups = "analytics" }
+      org_id             = var.org_id
+      org_role           = "readOnly"
+      space_custom_roles = { (arize_space.analytics_team.id) = arize_role.analyst.id }
+    },
+  ]
 }
 
 # ============================================================================
@@ -169,7 +193,7 @@ output "custom_roles" {
 
 output "saml_idp_with_custom_role" {
   value       = arize_saml_idp.company_saml.id
-  description = "SAML IdP configured with custom data_scientist role"
+  description = "SAML IdP mapping IdP groups to custom roles"
 }
 
 output "team_structure" {
@@ -213,34 +237,27 @@ output "team_structure" {
 # ============================================================================
 #
 # 1. ORGANIZATION ROLES vs SPACE ROLES:
-#    - Organization roles (default_org_role_id): Control Arize account permissions
-#    - Space roles (role in arize_space_member): Control space-level access
+#    - Organization roles (org_role, default_org_role_id): built-in names only
+#    - Space roles: built-in (space_roles) or custom (space_custom_roles)
+#    - Project roles (project_roles): custom or predefined role IDs
 #
 # 2. USING CUSTOM ROLES:
-#    - Create custom roles with arize_role resource
-#    - Reference them by ID in default_org_role_id
-#    - Each SAML user gets the default custom role on first login
-#    - Assign to spaces with specific space roles for granular control
+#    - Create custom roles with the arize_role resource
+#    - Reference them by ID in space_custom_roles / project_roles
+#    - Arize rejects custom role IDs in org_role and default_*_role_id
 #
-# 3. PERMISSION INHERITANCE:
-#    - Custom org role → grants account-level permissions
-#    - Space role → grants space-level access
-#    - Combine both for fine-grained control
-#
-# 4. WORKFLOW:
+# 3. WORKFLOW:
 #    - User logs in via SAML
-#    - Automatically assigned custom org role (from default_org_role_id)
-#    - Can be assigned to spaces with different space roles
-#    - Space role takes precedence in that space
+#    - Arize matches the user's SAML attributes against role_mappings
+#    - The matching mapping sets their org role and custom space roles
+#    - With sync_user_roles = true, this is re-applied on every login
 #
 # ============================================================================
 # EXAMPLE: DIFFERENT CUSTOM ROLES FOR DIFFERENT TEAMS
 # ============================================================================
 #
-# To assign different custom roles based on SAML attributes:
-# 1. Create multiple custom roles
-# 2. Create multiple SAML IdP configurations (one per team)
-# 3. Each SAML IdP has its own default_org_role_id pointing to custom role
-# 4. Use email_domains_list to scope each IdP to a team
+# The role_mappings above already give each IdP group its own custom role.
+# A mapping matches when the user has every attribute in `attributes`, so
+# combine attributes to narrow it:
 #
-# This allows fine-grained control over who gets which custom role!
+#   attributes = { groups = "data-science", department = "research" }

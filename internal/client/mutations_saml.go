@@ -2,218 +2,163 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
-const createSAMLIdPMutation = `
-mutation CreateSAMLIdP($input: CreateSAMLIdPInput!) {
-  createSAMLIdP(input: $input) {
-    samlIdP {
+var ErrSAMLIdPNotFound = errors.New("SAML IdP not found")
+
+const samlIdPFields = `
       id
       metadataUrl
       metadataXml
       enforceSaml
       syncUserRoles
+      signAuthn
       defaultOrgId
       defaultOrgRoleId
       defaultSpaceId
       defaultSpaceRoleId
-      emailDomainsList
+      emailDomainsList { domain }
       allowLoginWithDefaults
-      createdAt
-      updatedAt
       roleMappings {
-        id
         attributesMap
         isAccountAdmin
-        orgRole
+        accountRole
+        orgRole { orgId roleId }
         spaceRolesMap
         spaceRbacRolesMap
+        projectRolesMap
+        projectRolesManaged
       }
-    }
+      createdAt
+      updatedAt
+`
+
+const createSAMLIdPMutation = `
+mutation CreateSAMLIdP($input: CreateSAMLIdPInput!) {
+  createSAMLIdP(input: $input) {
+    error
+    idp {` + samlIdPFields + `}
   }
 }
 `
 
-func (c *Client) CreateSAMLIdP(ctx context.Context, input *CreateSAMLIdPInput) (*SAMLIdP, error) {
+func (c *Client) CreateSAMLIdP(ctx context.Context, input *SAMLIdPInput) (*SAMLIdP, error) {
 	var result struct {
 		CreateSAMLIdP struct {
-			SAMLIdP *SAMLIdP `json:"samlIdP"`
+			Error string   `json:"error"`
+			IdP   *SAMLIdP `json:"idp"`
 		} `json:"createSAMLIdP"`
 	}
 
-	variables := map[string]interface{}{
-		"input": input,
-	}
-
-	if err := c.execute(ctx, createSAMLIdPMutation, variables, &result); err != nil {
+	if err := c.execute(ctx, createSAMLIdPMutation, map[string]interface{}{"input": input}, &result); err != nil {
 		return nil, fmt.Errorf("failed to create SAML IdP: %w", err)
 	}
-
-	if result.CreateSAMLIdP.SAMLIdP == nil {
+	if result.CreateSAMLIdP.Error != "" {
+		return nil, fmt.Errorf("failed to create SAML IdP: %s", result.CreateSAMLIdP.Error)
+	}
+	if result.CreateSAMLIdP.IdP == nil {
 		return nil, fmt.Errorf("no SAML IdP returned from create")
 	}
 
-	return result.CreateSAMLIdP.SAMLIdP, nil
+	return result.CreateSAMLIdP.IdP, nil
 }
 
 const updateSAMLIdPMutation = `
 mutation UpdateSAMLIdP($input: UpdateSAMLIdPInput!) {
   updateSAMLIdP(input: $input) {
-    samlIdP {
-      id
-      metadataUrl
-      metadataXml
-      enforceSaml
-      syncUserRoles
-      defaultOrgId
-      defaultOrgRoleId
-      defaultSpaceId
-      defaultSpaceRoleId
-      emailDomainsList
-      allowLoginWithDefaults
-      createdAt
-      updatedAt
-      roleMappings {
-        id
-        attributesMap
-        isAccountAdmin
-        orgRole
-        spaceRolesMap
-        spaceRbacRolesMap
-      }
-    }
+    error
+    idp {` + samlIdPFields + `}
   }
 }
 `
 
-func (c *Client) UpdateSAMLIdP(ctx context.Context, input *UpdateSAMLIdPInput) (*SAMLIdP, error) {
+func (c *Client) UpdateSAMLIdP(ctx context.Context, input *SAMLIdPInput) (*SAMLIdP, error) {
 	var result struct {
 		UpdateSAMLIdP struct {
-			SAMLIdP *SAMLIdP `json:"samlIdP"`
+			Error string   `json:"error"`
+			IdP   *SAMLIdP `json:"idp"`
 		} `json:"updateSAMLIdP"`
 	}
 
-	variables := map[string]interface{}{
-		"input": input,
-	}
-
-	if err := c.execute(ctx, updateSAMLIdPMutation, variables, &result); err != nil {
+	if err := c.execute(ctx, updateSAMLIdPMutation, map[string]interface{}{"input": input}, &result); err != nil {
 		return nil, fmt.Errorf("failed to update SAML IdP: %w", err)
 	}
-
-	if result.UpdateSAMLIdP.SAMLIdP == nil {
+	if result.UpdateSAMLIdP.Error != "" {
+		return nil, fmt.Errorf("failed to update SAML IdP: %s", result.UpdateSAMLIdP.Error)
+	}
+	if result.UpdateSAMLIdP.IdP == nil {
 		return nil, fmt.Errorf("no SAML IdP returned from update")
 	}
 
-	return result.UpdateSAMLIdP.SAMLIdP, nil
-}
-
-const getSAMLIdPQuery = `
-query GetSAMLIdP($id: ID!) {
-  node(id: $id) {
-    __typename
-    ... on SAMLIdP {
-      id
-      metadataUrl
-      metadataXml
-      enforceSaml
-      syncUserRoles
-      defaultOrgId
-      defaultOrgRoleId
-      defaultSpaceId
-      defaultSpaceRoleId
-      emailDomainsList
-      allowLoginWithDefaults
-      createdAt
-      updatedAt
-      roleMappings {
-        id
-        attributesMap
-        isAccountAdmin
-        orgRole
-        spaceRolesMap
-        spaceRbacRolesMap
-      }
-    }
-  }
-}
-`
-
-func (c *Client) GetSAMLIdP(ctx context.Context, samlIdPID string) (*SAMLIdP, error) {
-	var result struct {
-		Node *SAMLIdP `json:"node"`
-	}
-
-	variables := map[string]interface{}{
-		"id": samlIdPID,
-	}
-
-	if err := c.execute(ctx, getSAMLIdPQuery, variables, &result); err != nil {
-		return nil, fmt.Errorf("failed to get SAML IdP: %w", err)
-	}
-
-	if result.Node == nil {
-		return nil, fmt.Errorf("SAML IdP not found")
-	}
-
-	return result.Node, nil
+	return result.UpdateSAMLIdP.IdP, nil
 }
 
 const listSAMLIdPsQuery = `
-query ListSAMLIdPs($first: Int, $after: String) {
+query ListSAMLIdPs($after: String) {
   account {
-    samlIdPs(first: $first, after: $after) {
+    samlIdPs(first: 50, after: $after) {
+      pageInfo { hasNextPage endCursor }
       edges {
-        node {
-          id
-          metadataUrl
-          metadataXml
-          enforceSaml
-          syncUserRoles
-          defaultOrgId
-          defaultOrgRoleId
-          defaultSpaceId
-          defaultSpaceRoleId
-          emailDomainsList
-          allowLoginWithDefaults
-          createdAt
-          updatedAt
-        }
+        node {` + samlIdPFields + `}
       }
     }
   }
 }
 `
 
-func (c *Client) ListSAMLIdPs(ctx context.Context, first int, after string) ([]*SAMLIdP, error) {
-	var result struct {
-		Account struct {
-			SAMLIdPs struct {
-				Edges []struct {
-					Node *SAMLIdP `json:"node"`
-				} `json:"edges"`
-			} `json:"samlIdPs"`
-		} `json:"account"`
-	}
+// ListSAMLIdPs returns the account's active SAML IdPs.
+func (c *Client) ListSAMLIdPs(ctx context.Context) ([]*SAMLIdP, error) {
+	var idps []*SAMLIdP
+	after := ""
+	for {
+		var result struct {
+			Account struct {
+				SAMLIdPs struct {
+					PageInfo struct {
+						HasNextPage bool   `json:"hasNextPage"`
+						EndCursor   string `json:"endCursor"`
+					} `json:"pageInfo"`
+					Edges []struct {
+						Node *SAMLIdP `json:"node"`
+					} `json:"edges"`
+				} `json:"samlIdPs"`
+			} `json:"account"`
+		}
 
-	variables := map[string]interface{}{
-		"first": first,
-	}
-	if after != "" {
-		variables["after"] = after
-	}
+		variables := map[string]interface{}{}
+		if after != "" {
+			variables["after"] = after
+		}
+		if err := c.execute(ctx, listSAMLIdPsQuery, variables, &result); err != nil {
+			return nil, fmt.Errorf("failed to list SAML IdPs: %w", err)
+		}
 
-	if err := c.execute(ctx, listSAMLIdPsQuery, variables, &result); err != nil {
-		return nil, fmt.Errorf("failed to list SAML IdPs: %w", err)
+		for _, edge := range result.Account.SAMLIdPs.Edges {
+			if edge.Node != nil {
+				idps = append(idps, edge.Node)
+			}
+		}
+		page := result.Account.SAMLIdPs.PageInfo
+		if !page.HasNextPage || page.EndCursor == "" {
+			return idps, nil
+		}
+		after = page.EndCursor
 	}
+}
 
-	samlIdPs := make([]*SAMLIdP, 0)
-	for _, edge := range result.Account.SAMLIdPs.Edges {
-		if edge.Node != nil {
-			samlIdPs = append(samlIdPs, edge.Node)
+// GetSAMLIdP looks the IdP up in the account listing, so an IdP that was
+// removed in the Arize UI reports ErrSAMLIdPNotFound.
+func (c *Client) GetSAMLIdP(ctx context.Context, samlIdPID string) (*SAMLIdP, error) {
+	idps, err := c.ListSAMLIdPs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, idp := range idps {
+		if idp.ID == samlIdPID {
+			return idp, nil
 		}
 	}
-
-	return samlIdPs, nil
+	return nil, ErrSAMLIdPNotFound
 }
