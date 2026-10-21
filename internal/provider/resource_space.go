@@ -20,7 +20,8 @@ func NewSpaceResource() resource.Resource {
 }
 
 type SpaceResource struct {
-	client *client.Client
+	client     *client.Client
+	restClient *client.RESTClient
 }
 
 type SpaceResourceModel struct {
@@ -99,6 +100,7 @@ func (r *SpaceResource) Configure(ctx context.Context, req resource.ConfigureReq
 	}
 
 	r.client = client.New(config.Endpoint.ValueString(), config.APIKey.ValueString())
+	r.restClient = client.NewREST(config.RESTEndpoint.ValueString(), config.APIKey.ValueString())
 }
 
 func (r *SpaceResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -197,7 +199,7 @@ func (r *SpaceResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 		return
 	}
 
-	if err := r.client.DeleteSpace(ctx, data.ID.ValueString()); err != nil {
+	if err := r.restClient.DeleteSpace(ctx, data.ID.ValueString()); err != nil {
 		resp.Diagnostics.AddError("Failed to delete space", err.Error())
 		return
 	}

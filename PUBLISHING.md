@@ -4,7 +4,7 @@ Releases are built with GoReleaser in the layout the Terraform Registry requires
 
 ## Namespace
 
-The registry namespace is the GitHub owner of the repository. `github.com/seanlee10/terraform-provider-arize` publishes as `seanlee10/arize`; publishing as `arize-ai/arize` (the address in `main.go` and the docs) requires the repository to live in the `arize-ai` GitHub organization. Either transfer the repository, or change the provider address in `main.go` and every `source = "arize-ai/arize"` to match.
+The registry namespace is the GitHub owner of the repository. This repository is not published to the registry itself: an Arize member forks it into the `arize-ai` GitHub organization, and that fork publishes as `arize-ai/arize` (the address in `main.go` and the docs). The steps below run on the fork, with a signing key the fork's owner controls.
 
 ## One-time setup
 

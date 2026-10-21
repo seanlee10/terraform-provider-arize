@@ -40,7 +40,7 @@ Arize GraphQL API (app.arize.com/graphql)
 - `queries.go` - GraphQL read operations (GetUser, ListUsers, etc.)
 - `mutations.go` - GraphQL write operations (CreateUser, AssignSpaceMembership, etc.)
 - `models.go` - Data structures for users, API keys
-- `rest.go`, `roles.go` - REST client (Bearer auth) and custom role CRUD
+- `rest.go`, `roles.go`, `spaces.go` - REST client (Bearer auth), custom role CRUD, and space deletion (the GraphQL `deleteSpace` mutation returns an internal server error)
 - `models_space.go` - Data structures for spaces and space members
 
 ### Critical API Knowledge

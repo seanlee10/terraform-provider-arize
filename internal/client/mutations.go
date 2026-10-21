@@ -266,32 +266,6 @@ func (c *Client) GetSpace(ctx context.Context, spaceID string) (*Space, error) {
 	return result.Node, nil
 }
 
-const deleteSpaceMutation = `
-mutation DeleteSpace($id: ID!) {
-  deleteSpace(input: {id: $id}) {
-    success
-  }
-}
-`
-
-func (c *Client) DeleteSpace(ctx context.Context, spaceID string) error {
-	var result struct {
-		DeleteSpace struct {
-			Success bool `json:"success"`
-		} `json:"deleteSpace"`
-	}
-
-	variables := map[string]interface{}{
-		"id": spaceID,
-	}
-
-	if err := c.execute(ctx, deleteSpaceMutation, variables, &result); err != nil {
-		return fmt.Errorf("failed to delete space: %w", err)
-	}
-
-	return nil
-}
-
 const assignSpaceMembershipMutation = `
 mutation AssignSpaceMembership($input: AssignSpaceMembershipMutationInput!) {
   assignSpaceMembership(input: $input) {
