@@ -13,8 +13,8 @@ fmt:
 	gofmt -s -w .
 
 install: build
-	mkdir -p ~/.terraform.d/plugins/registry.terraform.io/arize-ai/arize/0.0.1/darwin_amd64
-	cp bin/terraform-provider-arize ~/.terraform.d/plugins/registry.terraform.io/arize-ai/arize/0.0.1/darwin_amd64/
+	mkdir -p ~/.terraform.d/plugins/registry.terraform.io/arize-ai/arize/0.1.0/darwin_amd64
+	cp bin/terraform-provider-arize ~/.terraform.d/plugins/registry.terraform.io/arize-ai/arize/0.1.0/darwin_amd64/
 
 help:
 	@echo "Usage: make [target]"

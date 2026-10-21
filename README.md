@@ -30,7 +30,7 @@ terraform {
   required_providers {
     arize = {
       source  = "arize-ai/arize"
-      version = "~> 0.0.1"
+      version = "~> 0.1"
     }
   }
 }
