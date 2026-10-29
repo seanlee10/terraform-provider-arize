@@ -328,7 +328,7 @@ This creates the provider binary at `bin/terraform-provider-arize`.
 make install
 ```
 
-Installs the provider binary to your local Terraform plugin directory for testing.
+Installs the provider binary to your local Terraform plugin directory for testing, as `arize-ai/arize` at the latest release tag (override with `make install VERSION=x.y.z`) for your Terraform's platform. Then run `terraform init -upgrade` in your project.
 
 ### Testing
 
