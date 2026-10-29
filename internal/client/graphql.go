@@ -92,6 +92,14 @@ func (c *Client) execute(ctx context.Context, query string, variables map[string
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
 
+	// Auth failures come back as plain text ("Unauthorized"), not GraphQL JSON.
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("Arize rejected the API key (HTTP %d): check the provider api_key or ARIZE_API_KEY", resp.StatusCode)
+	}
+	if resp.StatusCode >= 400 && !json.Valid(respBody) {
+		return fmt.Errorf("GraphQL request failed (HTTP %d): %s", resp.StatusCode, bytes.TrimSpace(respBody))
+	}
+
 	var gqlResp GraphQLResponse
 	if err := json.Unmarshal(respBody, &gqlResp); err != nil {
 		return fmt.Errorf("failed to parse GraphQL response: %w", err)

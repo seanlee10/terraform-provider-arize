@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -71,6 +72,15 @@ func (p *ArizeProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		if apiKey != "" {
 			config.APIKey = types.StringValue(apiKey)
 		}
+	}
+
+	if !config.APIKey.IsUnknown() && config.APIKey.ValueString() == "" {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("api_key"),
+			"Missing Arize API key",
+			"Set api_key in the provider block or the ARIZE_API_KEY environment variable.",
+		)
+		return
 	}
 
 	// Set default endpoint
