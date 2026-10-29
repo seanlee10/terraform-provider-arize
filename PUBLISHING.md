@@ -4,7 +4,7 @@ Releases are built with GoReleaser in the layout the Terraform Registry requires
 
 ## Namespace
 
-The registry namespace is the GitHub owner of the repository. This repository is not published to the registry itself: an Arize member forks it into the `arize-ai` GitHub organization, and that fork publishes as `arize-ai/arize` (the address in `main.go` and the docs). The steps below run on the fork, with a signing key the fork's owner controls.
+The registry namespace is the GitHub owner of the repository, so this repository publishes as `seanlee10/arize` (the address in `main.go` and the docs). The namespace is managed from the `seanlee10` HCP Terraform organization (Registry → Public namespaces), with the HCP Terraform GitHub App installed on this repository.
 
 ## One-time setup
 
@@ -14,9 +14,9 @@ The registry namespace is the GitHub owner of the repository. This repository is
    gpg --armor --export <GPG_FINGERPRINT>
    ```
 
-   Add it at https://registry.terraform.io → *Settings* → *Signing Keys* for the namespace.
+   Add it in HCP Terraform under Registry → Public namespaces → *Settings* → *New GPG Key*.
 
-2. **Publish the provider.** Go to https://registry.terraform.io/publish/provider, sign in with GitHub, and select the repository. The registry installs a webhook and ingests existing signed releases.
+2. **Publish the provider.** In HCP Terraform, Registry → Public namespaces → *Publish* → *Provider*, select the repository and agree to the Terms of Use. Existing signed releases are ingested and future releases are published automatically.
 
 ## Releasing a version
 

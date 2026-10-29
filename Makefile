@@ -5,7 +5,7 @@ VERSION ?= $(shell git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')
 # Terraform's platform (e.g. darwin_arm64), which may differ from Go's default target
 OS_ARCH := $(shell terraform version -json 2>/dev/null | sed -n 's/.*"platform": *"\([^"]*\)".*/\1/p')
 OS_ARCH := $(if $(OS_ARCH),$(OS_ARCH),$(shell go env GOOS)_$(shell go env GOARCH))
-PLUGIN_DIR := ~/.terraform.d/plugins/registry.terraform.io/arize-ai/arize/$(VERSION)/$(OS_ARCH)
+PLUGIN_DIR := ~/.terraform.d/plugins/registry.terraform.io/seanlee10/arize/$(VERSION)/$(OS_ARCH)
 
 build:
 	go build -ldflags "-X main.version=$(VERSION)" -o bin/terraform-provider-arize .

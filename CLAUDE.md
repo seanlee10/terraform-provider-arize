@@ -143,13 +143,13 @@ make testacc
 make fmt
 
 # Build and install to local Terraform plugin directory
-# (as arize-ai/arize at the latest git tag, for Terraform's platform, which can differ from Go's)
+# (as seanlee10/arize at the latest git tag, for Terraform's platform, which can differ from Go's)
 make install
 ```
 
 ### Distribution & Releases
 
-The provider is not on the Terraform Registry, so `terraform init` cannot download it. Users install it locally with `make install`, a release zip placed in `~/.terraform.d/plugins/registry.terraform.io/arize-ai/arize/`, or a dev override. Releases are GitHub releases built locally with goreleaser:
+The provider is published to the Terraform Registry as `seanlee10/arize` (see `PUBLISHING.md`); new GitHub releases are picked up automatically. `make install` and dev overrides use the same address for local builds. Releases are GitHub releases built locally with goreleaser:
 
 ```bash
 git tag vX.Y.Z && git push origin main vX.Y.Z
@@ -209,7 +209,7 @@ terraform state show arize_space.test
 # ~/.terraform.d/credentials.tfrc
 provider_installation {
   dev_overrides {
-    "arize-ai/arize" = "/path/to/bin"
+    "seanlee10/arize" = "/path/to/bin"
   }
   direct {}
 }

@@ -21,7 +21,7 @@ This guide demonstrates practical examples and use cases for managing your Arize
 terraform {
   required_providers {
     arize = {
-      source  = "arize-ai/arize"
+      source  = "seanlee10/arize"
       version = "~> 0.0.1"
     }
   }
@@ -363,7 +363,7 @@ output "keys_needing_rotation" {
 terraform {
   required_providers {
     arize = {
-      source  = "arize-ai/arize"
+      source  = "seanlee10/arize"
       version = "~> 0.0.1"
     }
   }

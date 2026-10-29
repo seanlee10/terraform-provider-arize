@@ -9,7 +9,7 @@
 terraform {
   required_providers {
     arize = {
-      source = "arize-ai/arize"
+      source = "seanlee10/arize"
     }
   }
 }
