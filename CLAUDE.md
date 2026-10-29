@@ -16,8 +16,8 @@ User Terraform Config (.tf files)
 Terraform Plugin Framework
          ↓
 Provider (provider.go)
-  ├── Resources (5 total)
-  ├── Data Sources (3 total)
+  ├── Resources (7 total)
+  ├── Data Sources (4 total)
   └── Configuration (API key, endpoint)
          ↓
 GraphQL Client (internal/client/)
@@ -48,6 +48,11 @@ Arize GraphQL API (app.arize.com/graphql)
 **Authentication Header**
 The GraphQL API uses the `x-api-key` header, NOT `Authorization: Bearer`. This is different from many GraphQL APIs and is easy to get wrong. The REST API (`api.arize.com/v2`, `client/rest.go`) uses `Authorization: Bearer <same key>`.
 
+A rejected or empty key gets HTTP 401 with a plain-text `Unauthorized` body (not JSON), so `execute()` checks the status before parsing. A key with a trailing newline gets 400.
+
+**Regions**
+Keys only work on their own cluster; a valid key sent to another cluster gets 401. EU users must set both `endpoint = "https://app.eu-west-1a.arize.com/graphql"` and `rest_endpoint = "https://api.eu-west-1a.arize.com"`.
+
 **Query Patterns**
 - **List resources**: Via `account.users`, `space.evaluators`, etc. (not root-level queries)
 - **Get single resource**: Via `node(id)` query with GraphQL fragments (e.g., `... on User { ... }`)
@@ -69,6 +74,11 @@ query GetUser($id: ID!) {
   }
 }
 ```
+
+### Spaces (`resource_space.go`)
+
+- An account can have several organizations; `organization_id` picks one (default: the first from `account.organizations`) and forces replacement on change.
+- An unset description reads back as `""`; Read keeps it null, otherwise every plan shows an update and Update is unsupported.
 
 ### Space Roles
 
@@ -133,7 +143,17 @@ make testacc
 make fmt
 
 # Build and install to local Terraform plugin directory
+# (as arize-ai/arize at the latest git tag, for Terraform's platform, which can differ from Go's)
 make install
+```
+
+### Distribution & Releases
+
+The provider is not on the Terraform Registry, so `terraform init` cannot download it. Users install it locally with `make install`, a release zip placed in `~/.terraform.d/plugins/registry.terraform.io/arize-ai/arize/`, or a dev override. Releases are GitHub releases built locally with goreleaser:
+
+```bash
+git tag vX.Y.Z && git push origin main vX.Y.Z
+GITHUB_TOKEN=$(gh auth token) GPG_FINGERPRINT=<signing key> goreleaser release --clean
 ```
 
 ### Manual Testing with Terraform
