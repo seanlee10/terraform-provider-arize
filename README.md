@@ -51,6 +51,10 @@ resource "arize_user" "alice" {
 resource "arize_space" "ml_models" {
   name    = "ml-models"
   private = false
+
+  # Optional: defaults to the account's first organization. The ID is the
+  # segment after /organizations/ in the Arize UI URL.
+  organization_id = "QWNjb3VudE9yZ2FuaXphdGlvbjox"
 }
 
 # Add user to space

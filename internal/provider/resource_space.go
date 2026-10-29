@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/arize-ai/terraform-provider-arize/internal/client"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/arize-ai/terraform-provider-arize/internal/client"
 )
 
 var _ resource.Resource = (*SpaceResource)(nil)
@@ -25,13 +26,14 @@ type SpaceResource struct {
 }
 
 type SpaceResourceModel struct {
-	ID            types.String `tfsdk:"id"`
-	Name          types.String `tfsdk:"name"`
-	UUID          types.String `tfsdk:"uuid"`
-	Description   types.String `tfsdk:"description"`
-	Private       types.Bool   `tfsdk:"private"`
-	CreatedAt     types.String `tfsdk:"created_at"`
-	Organization  types.Object `tfsdk:"organization"`
+	ID             types.String `tfsdk:"id"`
+	Name           types.String `tfsdk:"name"`
+	UUID           types.String `tfsdk:"uuid"`
+	Description    types.String `tfsdk:"description"`
+	Private        types.Bool   `tfsdk:"private"`
+	CreatedAt      types.String `tfsdk:"created_at"`
+	OrganizationID types.String `tfsdk:"organization_id"`
+	Organization   types.Object `tfsdk:"organization"`
 }
 
 func (r *SpaceResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -56,6 +58,9 @@ func (r *SpaceResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 			"uuid": schema.StringAttribute{
 				MarkdownDescription: "The UUID of the space.",
 				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"description": schema.StringAttribute{
 				MarkdownDescription: "A description of the space.",
@@ -68,10 +73,25 @@ func (r *SpaceResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 			"created_at": schema.StringAttribute{
 				MarkdownDescription: "Timestamp when the space was created.",
 				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"organization_id": schema.StringAttribute{
+				MarkdownDescription: "The ID of the organization to create the space in. Defaults to the account's first organization. Changing this forces a new space.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+					stringplanmodifier.RequiresReplace(),
+				},
 			},
 			"organization": schema.SingleNestedAttribute{
 				MarkdownDescription: "The organization that owns the space.",
 				Computed:            true,
+				PlanModifiers: []planmodifier.Object{
+					objectplanmodifier.UseStateForUnknown(),
+				},
 				Attributes: map[string]schema.Attribute{
 					"id": schema.StringAttribute{
 						Computed: true,
@@ -110,18 +130,23 @@ func (r *SpaceResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	// Get the organization ID from the account
-	orgID, err := r.getDefaultOrganizationID(ctx)
-	if err != nil {
-		resp.Diagnostics.AddError("Failed to get organization", err.Error())
-		return
+	orgID := data.OrganizationID.ValueString()
+	if data.OrganizationID.IsUnknown() || orgID == "" {
+		// No organization configured: use the account's first organization
+		var err error
+		orgID, err = r.getDefaultOrganizationID(ctx)
+		if err != nil {
+			resp.Diagnostics.AddError("Failed to get organization", err.Error())
+			return
+		}
 	}
+	data.OrganizationID = types.StringValue(orgID)
 
 	input := &client.CreateSpaceInput{
-		Name:                   data.Name.ValueString(),
-		AccountOrganizationID:  orgID,
-		Private:                data.Private.ValueBool(),
-		Description:            data.Description.ValueString(),
+		Name:                  data.Name.ValueString(),
+		AccountOrganizationID: orgID,
+		Private:               data.Private.ValueBool(),
+		Description:           data.Description.ValueString(),
 	}
 
 	space, err := r.client.CreateSpace(ctx, input)
@@ -136,6 +161,7 @@ func (r *SpaceResource) Create(ctx context.Context, req resource.CreateRequest, 
 
 	// Map organization if present
 	if space.Organization != nil {
+		data.OrganizationID = types.StringValue(space.Organization.ID)
 		orgMap := map[string]attr.Value{
 			"id":   types.StringValue(space.Organization.ID),
 			"name": types.StringValue(space.Organization.Name),
@@ -165,12 +191,16 @@ func (r *SpaceResource) Read(ctx context.Context, req resource.ReadRequest, resp
 
 	data.Name = types.StringValue(space.Name)
 	data.UUID = types.StringValue(space.UUID)
-	data.Description = types.StringValue(space.Description)
+	// An unset description comes back as ""; keep it null so plans stay clean
+	if space.Description != "" || !data.Description.IsNull() {
+		data.Description = types.StringValue(space.Description)
+	}
 	data.Private = types.BoolValue(space.Private)
 	data.CreatedAt = types.StringValue(space.CreatedAt)
 
 	// Map organization if present
 	if space.Organization != nil {
+		data.OrganizationID = types.StringValue(space.Organization.ID)
 		orgMap := map[string]attr.Value{
 			"id":   types.StringValue(space.Organization.ID),
 			"name": types.StringValue(space.Organization.Name),
