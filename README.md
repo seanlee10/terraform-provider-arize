@@ -103,6 +103,8 @@ Creating an `arize_user` sends an email invitation with the Member account role.
 
 **Destroying an `arize_user` blocks the user in Arize permanently**: the same email can't be invited again.
 
+Arize can't change a user's email, so **changing `email` replaces the user**: the old user is blocked and the new email gets an invitation. Changes in letter case only are ignored.
+
 ## Space Roles
 
 When adding users to spaces, choose from:
