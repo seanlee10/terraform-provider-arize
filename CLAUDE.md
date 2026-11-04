@@ -38,8 +38,9 @@ Arize GraphQL API (app.arize.com/graphql)
 **GraphQL Client** (`internal/client/`)
 - `graphql.go` - HTTP client with x-api-key authentication
 - `queries.go` - GraphQL read operations (GetUser, ListUsers, etc.)
-- `mutations.go` - GraphQL write operations (CreateUser, AssignSpaceMembership, etc.)
+- `mutations.go` - GraphQL write operations (CreateSpace, AssignSpaceMembership, etc.)
 - `models.go` - Data structures for users, API keys
+- `users_rest.go` - REST user CRUD (the GraphQL user mutations no longer exist)
 - `rest.go`, `roles.go`, `spaces.go` - REST client (Bearer auth), custom role CRUD, and space deletion (the GraphQL `deleteSpace` mutation returns an internal server error)
 - `models_space.go` - Data structures for spaces and space members
 
@@ -74,6 +75,16 @@ query GetUser($id: ID!) {
   }
 }
 ```
+
+### Users (`resource_user.go`, `client/users_rest.go`)
+
+Verified against the live API:
+- GraphQL has no `createUser`/`updateUser`/`deleteUser` mutations, and `node(id)` can't read invitations, so the resource uses REST `/v2/users` (GraphQL only for `user_type` on import).
+- `POST /v2/users` creates an invitation (`AccountInvitation:` ID, status `INVITED`) and is idempotent on email: a pending invitation is returned as-is, an active member gets 409. The API stores the email as the invitation's name.
+- Accepting creates a user with a new ID and the name entered at signup; the invitation ID then returns 404. Read falls back to `GET /v2/users?email=` (partial match, so compare exactly) and adopts the new ID.
+- Invitations can't be added to spaces (GraphQL `assignSpaceMembership` rejects the ID, REST requires an existing user), so memberships work only after acceptance. `assignSpaceMembership` adds the organization membership itself.
+- `DELETE /v2/users/{id}` blocks the user permanently; the email can't be invited again.
+- REST status is uppercase; Read lowercases it to match values stored from GraphQL.
 
 ### Spaces (`resource_space.go`)
 
@@ -220,7 +231,7 @@ Then run Terraform with: `TF_CLI_CONFIG_FILE=~/.terraform.d/credentials.tfrc ter
 
 **Resource Models**
 - Terraform-side data: `*ResourceModel` (e.g., `UserResourceModel`)
-- API-side data: Plain structs (e.g., `User`, `CreateUserInput`)
+- API-side data: Plain structs (e.g., `User`, `RESTUser`)
 - Conversion happens in Create/Read/Update methods
 
 **Error Handling**
