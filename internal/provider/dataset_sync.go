@@ -39,7 +39,15 @@ func diffExamples(keyColumn string, existing []client.DatasetExample, desired ma
 		case !ok:
 			d.Insert = append(d.Insert, row)
 		case !reflect.DeepEqual(ex.Fields, row):
-			d.Update = append(d.Update, client.DatasetExample{ID: ex.ID, Fields: row})
+			// The update is a patch: columns no longer in the row are cleared.
+			var clear []string
+			for col := range ex.Fields {
+				if _, ok := row[col]; !ok {
+					clear = append(clear, col)
+				}
+			}
+			sort.Strings(clear)
+			d.Update = append(d.Update, client.DatasetExample{ID: ex.ID, Fields: row, Clear: clear})
 		}
 	}
 	for _, ex := range existing {

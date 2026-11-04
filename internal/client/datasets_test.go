@@ -207,3 +207,27 @@ func TestDeleteDataset_AlreadyGoneIsNotAnError(t *testing.T) {
 		t.Fatalf("DeleteDataset() error = %v, want nil for 404", err)
 	}
 }
+
+func TestDatasetExampleUnmarshal_NullColumnIsUnset(t *testing.T) {
+	// Arize fills a column missing from a row with null.
+	var ex DatasetExample
+	if err := json.Unmarshal([]byte(`{"id":"e1","q":"b","x":null}`), &ex); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := ex.Fields["x"]; ok {
+		t.Fatalf("Fields = %v, want null column x left out", ex.Fields)
+	}
+	if ex.Fields["q"] != "b" {
+		t.Fatalf("Fields = %v, want q = b", ex.Fields)
+	}
+}
+
+func TestDatasetExampleMarshal_ClearedColumnIsNull(t *testing.T) {
+	b, err := json.Marshal(DatasetExample{ID: "e1", Fields: map[string]string{"q": "a"}, Clear: []string{"x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != `{"id":"e1","q":"a","x":null}` {
+		t.Fatalf("JSON = %s, want x sent as null (null clears a column in place)", b)
+	}
+}

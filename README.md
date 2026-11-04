@@ -303,7 +303,7 @@ How many days are in a leap year?,366
 
 **How changes apply:**
 - Rows are matched to existing examples by `key_column`, and every apply edits the dataset's latest version in place (no new version):
-  - a row whose other columns changed is updated
+  - a row whose other columns changed is updated, and a column removed from a row is cleared
   - a new key adds an example
   - a key no longer in `examples` deletes its example
 - `terraform plan` shows changes per key, e.g. `~ "What is the capital of France?" = { ~ "answer" = "Lyon" -> "Paris" }`
@@ -312,7 +312,6 @@ How many days are in a leap year?,366
 
 **Limitations:**
 - Every key must be unique: duplicate keys in the file fail with Terraform's duplicate key error, and duplicate keys added in the Arize UI make plan fail until removed
-- Removing a whole column from the file doesn't remove it from existing examples in Arize
 - Column values are strings; `id`, `created_at`, `updated_at`, and `annotations` are reserved column names
 - Dataset versions aren't managed: changes always apply to the latest version
 

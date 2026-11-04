@@ -125,6 +125,13 @@ Verified against the live API:
 - `allowLoginWithDefaults: true` requires all four `default*` fields; `false` requires at least one role mapping, and each mapping needs `orgRole` unless `isAccountAdmin`.
 - `*Map` fields are `[key, value]` tuple lists; the server sorts `attributesMap` by key. Unset strings come back as `""`.
 
+### Datasets (`resource_dataset.go`, `client/datasets.go`)
+
+Verified against the live API:
+- REST `/v2/datasets`; example create, insert, update, and delete take at most 1000 examples per request (`client.MaxExamplesPerRequest`).
+- A column missing from a row is returned as `null`; the client treats `null` as unset, otherwise rows with uneven columns show a change on every plan.
+- `PATCH .../examples` is a patch, in place (no new version): columns not sent are kept, and a column sent as `null` is cleared. Updates send `null` for columns no longer in the row.
+
 ### Evaluators (`resource_evaluator.go`, `client/evaluators.go`)
 
 API behavior verified against the live API, which the resource depends on:
