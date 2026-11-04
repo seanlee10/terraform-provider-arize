@@ -159,3 +159,13 @@ func TestParseDatasetImportID(t *testing.T) {
 		}
 	}
 }
+
+func TestDiffExamples_RemovedColumnIsCleared(t *testing.T) {
+	existing := []client.DatasetExample{{ID: "e1", Fields: map[string]string{"q": "a", "x": "1"}}}
+
+	d := diffExamples("q", existing, map[string]map[string]string{"a": {"q": "a"}})
+
+	if len(d.Update) != 1 || len(d.Update[0].Clear) != 1 || d.Update[0].Clear[0] != "x" {
+		t.Fatalf("Update = %+v, want e1 updated with x cleared", d.Update)
+	}
+}

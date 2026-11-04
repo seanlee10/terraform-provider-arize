@@ -5,8 +5,8 @@ import (
 	"flag"
 	"log"
 
-	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/arize-ai/terraform-provider-arize/internal/provider"
+	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 )
 
 var (

@@ -83,7 +83,8 @@ Verified against the live API:
 - `POST /v2/users` creates an invitation (`AccountInvitation:` ID, status `INVITED`) and is idempotent on email: a pending invitation is returned as-is, an active member gets 409. The API stores the email as the invitation's name.
 - Accepting creates a user with a new ID and the name entered at signup; the invitation ID then returns 404. Read falls back to `GET /v2/users?email=` (partial match, so compare exactly) and adopts the new ID.
 - Invitations can't be added to spaces (GraphQL `assignSpaceMembership` rejects the ID, REST requires an existing user), so memberships work only after acceptance. `assignSpaceMembership` adds the organization membership itself.
-- `DELETE /v2/users/{id}` blocks the user permanently; the email can't be invited again.
+- `DELETE /v2/users/{id}` on an active user deactivates it: REST then returns 404 and omits it from lists (so Read drops it from state), GraphQL `node(id)` shows `status: inactive`. On an invitation it cancels it. Either way a new invitation for the same email was accepted afterwards (not tested: a user who had signed up through an invitation). REST statuses are only `ACTIVE`, `INVITED`, `EXPIRED`.
+- `invite_mode: NONE` creates an active user directly, without an invitation.
 - REST status is uppercase; Read lowercases it to match values stored from GraphQL.
 - `PATCH /v2/users/{id}` accepts only `name` (`email` is ignored like an unknown field), so an email change forces replacement. Arize stores emails lowercased; the replace check and Read compare case-insensitively.
 
@@ -123,6 +124,13 @@ Verified against the live API:
 - `default_org_role_id` / `default_space_role_id` and mapping `orgRole.roleId` accept only built-in names (`admin`, `member`, `readOnly`, `annotator`); custom role IDs work only in `spaceRbacRolesMap` / `projectRolesMap`.
 - `allowLoginWithDefaults: true` requires all four `default*` fields; `false` requires at least one role mapping, and each mapping needs `orgRole` unless `isAccountAdmin`.
 - `*Map` fields are `[key, value]` tuple lists; the server sorts `attributesMap` by key. Unset strings come back as `""`.
+
+### Datasets (`resource_dataset.go`, `client/datasets.go`)
+
+Verified against the live API:
+- REST `/v2/datasets`; example create, insert, update, and delete take at most 1000 examples per request (`client.MaxExamplesPerRequest`).
+- A column missing from a row is returned as `null`; the client treats `null` as unset, otherwise rows with uneven columns show a change on every plan.
+- `PATCH .../examples` is a patch, in place (no new version): columns not sent are kept, and a column sent as `null` is cleared. Updates send `null` for columns no longer in the row.
 
 ### Evaluators (`resource_evaluator.go`, `client/evaluators.go`)
 

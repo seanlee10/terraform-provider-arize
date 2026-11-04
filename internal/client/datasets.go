@@ -11,9 +11,9 @@ import (
 
 var ErrDatasetNotFound = errors.New("dataset not found")
 
-// maxExamplesPerRequest is the API's limit on examples in one create, insert,
+// MaxExamplesPerRequest is the API's limit on examples in one create, insert,
 // update, or delete request.
-const maxExamplesPerRequest = 1000
+const MaxExamplesPerRequest = 1000
 
 type Dataset struct {
 	ID        string           `json:"id"`
@@ -47,6 +47,9 @@ func (d *Dataset) LatestVersionID() string {
 type DatasetExample struct {
 	ID     string
 	Fields map[string]string
+	// Clear lists columns to remove from the example on update; they are
+	// sent as null, which clears them in place.
+	Clear []string
 }
 
 // systemExampleFields are set by the API on every example and are not columns.
@@ -65,7 +68,8 @@ func (e *DatasetExample) UnmarshalJSON(b []byte) error {
 			}
 			continue
 		}
-		if systemExampleFields[k] {
+		// Arize fills a column missing from a row with null: not a value.
+		if systemExampleFields[k] || string(v) == "null" {
 			continue
 		}
 		// Columns are strings; anything else is kept as its JSON text.
@@ -79,7 +83,10 @@ func (e *DatasetExample) UnmarshalJSON(b []byte) error {
 }
 
 func (e DatasetExample) MarshalJSON() ([]byte, error) {
-	m := make(map[string]string, len(e.Fields)+1)
+	m := make(map[string]interface{}, len(e.Fields)+len(e.Clear)+1)
+	for _, k := range e.Clear {
+		m[k] = nil
+	}
 	for k, v := range e.Fields {
 		m[k] = v
 	}
@@ -92,7 +99,7 @@ func datasetPath(datasetID string) string {
 }
 
 // CreateDataset creates a dataset with its first examples (at least one, at
-// most maxExamplesPerRequest; insert the rest afterwards).
+// most MaxExamplesPerRequest; insert the rest afterwards).
 func (c *RESTClient) CreateDataset(ctx context.Context, spaceID, name string, rows []map[string]string) (*Dataset, error) {
 	body := map[string]interface{}{"space_id": spaceID, "name": name, "examples": rows}
 	var ds Dataset
@@ -171,7 +178,8 @@ func (c *RESTClient) InsertDatasetExamples(ctx context.Context, datasetID string
 }
 
 // UpdateDatasetExamples patches examples by ID in the latest version, in place
-// (no new version). Columns not sent are left unchanged.
+// (no new version). Columns not sent are left unchanged; columns in Clear are
+// removed.
 func (c *RESTClient) UpdateDatasetExamples(ctx context.Context, datasetID string, examples []DatasetExample) error {
 	for _, batch := range batches(examples) {
 		body := map[string]interface{}{"examples": batch}
@@ -202,9 +210,9 @@ func (c *RESTClient) DeleteDatasetExamples(ctx context.Context, datasetID, versi
 
 func batches[T any](items []T) [][]T {
 	var out [][]T
-	for len(items) > maxExamplesPerRequest {
-		out = append(out, items[:maxExamplesPerRequest])
-		items = items[maxExamplesPerRequest:]
+	for len(items) > MaxExamplesPerRequest {
+		out = append(out, items[:MaxExamplesPerRequest])
+		items = items[MaxExamplesPerRequest:]
 	}
 	if len(items) > 0 {
 		out = append(out, items)

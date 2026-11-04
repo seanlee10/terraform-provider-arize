@@ -101,9 +101,9 @@ terraform apply
 
 Creating an `arize_user` sends an email invitation with the Member account role. Until it's accepted, the user has status `invited` and can't be added to spaces, so `arize_space_member` resources for it fail until then. After acceptance, the next plan picks up the user's new ID and the name they entered at signup.
 
-**Destroying an `arize_user` blocks the user in Arize permanently**: the same email can't be invited again.
+**Destroying an `arize_user` deactivates the user in Arize**, removing their access. Destroying one that is still invited cancels the invitation.
 
-Arize can't change a user's email, so **changing `email` replaces the user**: the old user is blocked and the new email gets an invitation. Changes in letter case only are ignored.
+Arize can't change a user's email, so **changing `email` replaces the user**: the old user is deactivated and the new email gets an invitation. Changes in letter case only are ignored.
 
 ## Space Roles
 
@@ -303,7 +303,7 @@ How many days are in a leap year?,366
 
 **How changes apply:**
 - Rows are matched to existing examples by `key_column`, and every apply edits the dataset's latest version in place (no new version):
-  - a row whose other columns changed is updated
+  - a row whose other columns changed is updated, and a column removed from a row is cleared
   - a new key adds an example
   - a key no longer in `examples` deletes its example
 - `terraform plan` shows changes per key, e.g. `~ "What is the capital of France?" = { ~ "answer" = "Lyon" -> "Paris" }`
@@ -312,7 +312,6 @@ How many days are in a leap year?,366
 
 **Limitations:**
 - Every key must be unique: duplicate keys in the file fail with Terraform's duplicate key error, and duplicate keys added in the Arize UI make plan fail until removed
-- Removing a whole column from the file doesn't remove it from existing examples in Arize
 - Column values are strings; `id`, `created_at`, `updated_at`, and `annotations` are reserved column names
 - Dataset versions aren't managed: changes always apply to the latest version
 

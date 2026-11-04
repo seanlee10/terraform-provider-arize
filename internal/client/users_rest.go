@@ -91,8 +91,7 @@ func (c *RESTClient) RenameUser(ctx context.Context, userID, name string) error 
 	return nil
 }
 
-// DeleteUser blocks the user. Blocking is permanent: the API refuses to
-// invite the same email again.
+// DeleteUser deactivates an active user or cancels a pending invitation.
 func (c *RESTClient) DeleteUser(ctx context.Context, userID string) error {
 	if err := c.do(ctx, http.MethodDelete, "/v2/users/"+url.PathEscape(userID), nil, nil); err != nil {
 		var apiErr *APIError

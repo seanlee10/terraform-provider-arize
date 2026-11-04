@@ -1,13 +1,13 @@
 package client
 
 type Space struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	UUID          string `json:"uuid"`
-	Description   string `json:"description,omitempty"`
-	CreatedAt     string `json:"createdAt"`
-	Organization  *Org   `json:"organization,omitempty"`
-	Private       bool   `json:"private"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	UUID         string `json:"uuid"`
+	Description  string `json:"description,omitempty"`
+	CreatedAt    string `json:"createdAt"`
+	Organization *Org   `json:"organization,omitempty"`
+	Private      bool   `json:"private"`
 }
 
 type Org struct {
@@ -16,10 +16,10 @@ type Org struct {
 }
 
 type CreateSpaceInput struct {
-	Name                   string `json:"name"`
-	AccountOrganizationID  string `json:"accountOrganizationId"`
-	Private                bool   `json:"private"`
-	Description            string `json:"description,omitempty"`
+	Name                  string `json:"name"`
+	AccountOrganizationID string `json:"accountOrganizationId"`
+	Private               bool   `json:"private"`
+	Description           string `json:"description,omitempty"`
 }
 
 // UpdateSpaceInput is the REST PATCH /v2/spaces/{id} body. Every field is
@@ -31,11 +31,11 @@ type UpdateSpaceInput struct {
 }
 
 type SpaceMember struct {
-	ID     string `json:"id"`
-	UserID string `json:"userId"`
+	ID      string `json:"id"`
+	UserID  string `json:"userId"`
 	SpaceID string `json:"spaceId"`
-	Role   string `json:"role"`
-	User   *User  `json:"user,omitempty"`
+	Role    string `json:"role"`
+	User    *User  `json:"user,omitempty"`
 }
 
 type SpaceMemberInput struct {

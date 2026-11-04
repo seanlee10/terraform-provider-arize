@@ -48,8 +48,8 @@ type GraphQLRequest struct {
 }
 
 type GraphQLResponse struct {
-	Data   interface{}       `json:"data"`
-	Errors []GraphQLError    `json:"errors"`
+	Data   interface{}    `json:"data"`
+	Errors []GraphQLError `json:"errors"`
 }
 
 type GraphQLError struct {

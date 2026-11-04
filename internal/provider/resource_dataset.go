@@ -141,8 +141,8 @@ func (r *DatasetResource) Create(ctx context.Context, req resource.CreateRequest
 	// The create request takes at most one batch; the rest are appended.
 	ordered := sortedRows(rows)
 	first, rest := ordered, []map[string]string(nil)
-	if len(ordered) > 1000 {
-		first, rest = ordered[:1000], ordered[1000:]
+	if len(ordered) > client.MaxExamplesPerRequest {
+		first, rest = ordered[:client.MaxExamplesPerRequest], ordered[client.MaxExamplesPerRequest:]
 	}
 	ds, err := r.client.CreateDataset(ctx, data.SpaceID.ValueString(), data.Name.ValueString(), first)
 	if err != nil {
