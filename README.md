@@ -2,7 +2,7 @@
 
 [![GitHub release](https://img.shields.io/github/v/release/seanlee10/terraform-provider-arize?style=flat-square)](https://github.com/seanlee10/terraform-provider-arize/releases)
 
-Manage your Arize account infrastructure as code with Terraform. Create and manage users, spaces, API keys, evaluators, SAML/SSO configuration, and team access with full GitOps support.
+Manage your Arize account infrastructure as code with Terraform. Create and manage users, spaces, API keys, evaluators, datasets, SAML/SSO configuration, and team access with full GitOps support.
 
 ## Features
 
@@ -12,6 +12,7 @@ Manage your Arize account infrastructure as code with Terraform. Create and mana
 ✅ **Custom Roles** - Define custom roles and their permissions  
 ✅ **SAML/SSO** - Configure SAML identity providers and role mappings for enterprise SSO  
 ✅ **Evaluators** - Version LLM-as-judge and Python code evaluators alongside your app  
+✅ **Datasets** - Keep dataset examples in a CSV and sync them to Arize on every apply  
 ✅ **API Keys** - Generate and manage service account keys for automation  
 ✅ **Multi-Environment** - Deploy to dev, staging, and production with safety checks  
 ✅ **Import Existing** - Adopt Terraform for existing Arize infrastructure  
@@ -85,6 +86,7 @@ terraform apply
 | `arize_space_member` | Add users to spaces with role-based access |
 | `arize_saml_idp` | Configure SAML identity provider for enterprise SSO |
 | `arize_evaluator` | Manage LLM-as-judge (`template`) and Python (`code`) evaluators |
+| `arize_dataset` | Manage a dataset and its examples, synced from a CSV or any list of rows |
 
 ## Data Sources
 
@@ -268,6 +270,42 @@ resource "arize_evaluator" "non_empty" {
 
 See [Evaluators example](examples/09_evaluators.tf) for both evaluator types and the data source.
 
+## Datasets
+
+Keep a dataset's examples in a file and let Terraform keep Arize in sync:
+
+```hcl
+resource "arize_dataset" "basic_quiz" {
+  space_id   = arize_space.ml_models.id
+  name       = "basic-quiz"
+  key_column = "question"
+  examples   = { for row in csvdecode(file("${path.module}/datasets/basic_quiz.csv")) : row.question => row }
+}
+```
+
+```csv
+question,answer
+What is the capital of France?,Paris
+How many days are in a leap year?,366
+```
+
+`examples` is a map from each row's `key_column` value to the row. Each row is a map of column to string value and must include the key column with the same value as its map key. The `for` expression above builds it from a CSV; use `jsondecode` the same way for JSON.
+
+**How changes apply:**
+- Rows are matched to existing examples by `key_column`, and every apply edits the dataset's latest version in place (no new version):
+  - a row whose other columns changed is updated
+  - a new key adds an example
+  - a key no longer in `examples` deletes its example
+- `terraform plan` shows changes per key, e.g. `~ "What is the capital of France?" = { ~ "answer" = "Lyon" -> "Paris" }`
+- Changing a row's key counts as deleting that example and adding a new one
+- Renaming the dataset (`name`) is done in place; changing `space_id` replaces the dataset
+
+**Limitations:**
+- Every key must be unique: duplicate keys in the file fail with Terraform's duplicate key error, and duplicate keys added in the Arize UI make plan fail until removed
+- Removing a whole column from the file doesn't remove it from existing examples in Arize
+- Column values are strings; `id`, `created_at`, `updated_at`, and `annotations` are reserved column names
+- Dataset versions aren't managed: changes always apply to the latest version
+
 ## Import Existing Resources
 
 Adopt Terraform for your existing Arize infrastructure:
@@ -287,6 +325,9 @@ terraform import arize_role.data_scientist "<role_id>"
 
 # Import an evaluator (space ID / evaluator ID)
 terraform import arize_evaluator.correctness "<space_id>/<evaluator_id>"
+
+# Import a dataset (dataset ID : key column)
+terraform import arize_dataset.basic_quiz "<dataset_id>:question"
 ```
 
 Then create matching Terraform configuration for the imported resource.
@@ -390,7 +431,7 @@ provider "arize" {
   # Optional: defaults to https://app.arize.com/graphql
   endpoint = "https://app.arize.com/graphql"
 
-  # REST API base URL (used for custom roles)
+  # REST API base URL (used for custom roles and datasets)
   # Optional: defaults to https://api.arize.com
   rest_endpoint = "https://api.arize.com"
 }

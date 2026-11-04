@@ -105,6 +105,7 @@ func (p *ArizeProvider) Resources(ctx context.Context) []func() resource.Resourc
 		NewSpaceMemberResource,
 		NewSAMLIdPResource,
 		NewEvaluatorResource,
+		NewDatasetResource,
 	}
 }
 
