@@ -75,14 +75,23 @@ func (r *UserResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 			"status": schema.StringAttribute{
 				MarkdownDescription: "The status of the user: `active`, `invited`, or `expired`.",
 				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"user_type": schema.StringAttribute{
 				MarkdownDescription: "The type of user (human or bot). Defaults to human.",
 				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"created_at": schema.StringAttribute{
 				MarkdownDescription: "Timestamp when the user was created.",
 				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}
