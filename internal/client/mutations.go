@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -143,11 +144,16 @@ func (c *Client) GetSpace(ctx context.Context, spaceID string) (*Space, error) {
 	}
 
 	if err := c.execute(ctx, getSpaceQuery, variables, &result); err != nil {
+		// A deleted space is a NOT_FOUND error, not a null node.
+		var gqlErr *GraphQLError
+		if errors.As(err, &gqlErr) && gqlErr.Extensions.Code == "NOT_FOUND" {
+			return nil, ErrSpaceNotFound
+		}
 		return nil, fmt.Errorf("failed to get space: %w", err)
 	}
 
 	if result.Node == nil {
-		return nil, fmt.Errorf("space not found")
+		return nil, ErrSpaceNotFound
 	}
 
 	return result.Node, nil

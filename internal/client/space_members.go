@@ -6,7 +6,10 @@ import (
 	"fmt"
 )
 
-var ErrSpaceMemberNotFound = errors.New("space member not found")
+var (
+	ErrSpaceMemberNotFound = errors.New("space member not found")
+	ErrSpaceNotFound       = errors.New("space not found")
+)
 
 // SpaceUser is an entry in Space.spaceUsers. Account admins are listed with
 // membership ACCOUNT_ADMIN and no role whether or not they were also added

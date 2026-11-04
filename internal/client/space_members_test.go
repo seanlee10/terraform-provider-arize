@@ -119,3 +119,16 @@ func TestRemoveSpaceMember_OtherErrorsFail(t *testing.T) {
 		t.Fatal("RemoveSpaceMember() error = nil, want the API error")
 	}
 }
+
+func TestGetSpace_DeletedSpaceReturnsSentinel(t *testing.T) {
+	c, _ := gqlServer(t,
+		`{"errors":[{"message":"No object found.","path":["node"],"extensions":{"code":"NOT_FOUND"}}],"data":{"node":null}}`,
+		`{"data":{"node":null}}`,
+	)
+
+	for _, name := range []string{"NOT_FOUND error", "null node"} {
+		if _, err := c.GetSpace(context.Background(), "gone"); !errors.Is(err, ErrSpaceNotFound) {
+			t.Fatalf("%s: error = %v, want ErrSpaceNotFound", name, err)
+		}
+	}
+}
