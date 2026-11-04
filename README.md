@@ -101,9 +101,9 @@ terraform apply
 
 Creating an `arize_user` sends an email invitation with the Member account role. Until it's accepted, the user has status `invited` and can't be added to spaces, so `arize_space_member` resources for it fail until then. After acceptance, the next plan picks up the user's new ID and the name they entered at signup.
 
-**Destroying an `arize_user` blocks the user in Arize permanently**: the same email can't be invited again.
+**Destroying an `arize_user` deactivates the user in Arize**, removing their access. Destroying one that is still invited cancels the invitation.
 
-Arize can't change a user's email, so **changing `email` replaces the user**: the old user is blocked and the new email gets an invitation. Changes in letter case only are ignored.
+Arize can't change a user's email, so **changing `email` replaces the user**: the old user is deactivated and the new email gets an invitation. Changes in letter case only are ignored.
 
 ## Space Roles
 

@@ -44,7 +44,7 @@ func (r *UserResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Manages an Arize user. Creating one sends an email invitation with the Member account role; " +
 			"until it is accepted the user has an invitation ID and status `invited`. " +
-			"Destroying the user blocks it in Arize permanently: the same email can't be invited again.",
+			"Destroying the user deactivates it in Arize, removing its access; destroying a pending invitation cancels it.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				MarkdownDescription: "The unique identifier for the user.",
@@ -55,7 +55,7 @@ func (r *UserResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 			},
 			"email": schema.StringAttribute{
 				MarkdownDescription: "The email address of the user. Arize can't change a user's email, so changing it " +
-					"replaces the user: the old user is blocked permanently and the new email gets an invitation. " +
+					"replaces the user: the old user is deactivated and the new email gets an invitation. " +
 					"Case-only changes are ignored.",
 				Required: true,
 				PlanModifiers: []planmodifier.String{
@@ -186,7 +186,8 @@ func (r *UserResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 		return
 	}
 
-	// Arize blocks the user permanently; the email can't be invited again.
+	// Deactivates an active user (gone from REST, "inactive" in GraphQL) or
+	// cancels a pending invitation.
 	if err := r.rest.DeleteUser(ctx, data.ID.ValueString()); err != nil {
 		resp.Diagnostics.AddError("Failed to delete user", err.Error())
 		return
