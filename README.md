@@ -78,7 +78,7 @@ terraform apply
 
 | Resource | Description |
 |----------|-------------|
-| `arize_user` | Manage users in your Arize account |
+| `arize_user` | Invite and manage users in your Arize account |
 | `arize_role` | Manage custom roles and their permissions |
 | `arize_api_key` | Create and manage API keys for automation |
 | `arize_space` | Create and manage ML monitoring spaces |
@@ -94,6 +94,12 @@ terraform apply
 | `arize_roles` | Query all predefined and custom roles (including ones created in UI) |
 | `arize_api_keys` | Query all API keys in your account |
 | `arize_evaluators` | List evaluators in a space (including ones created in UI) |
+
+## Users
+
+Creating an `arize_user` sends an email invitation with the Member account role. Until it's accepted, the user has status `invited` and can't be added to spaces, so `arize_space_member` resources for it fail until then. After acceptance, the next plan picks up the user's new ID and the name they entered at signup.
+
+**Destroying an `arize_user` blocks the user in Arize permanently**: the same email can't be invited again.
 
 ## Space Roles
 
@@ -274,7 +280,7 @@ Adopt Terraform for your existing Arize infrastructure:
 
 ```bash
 # Import a user
-terraform import arize_user.alice "<user_id>"
+terraform import arize_user.alice "<user_id or pending invitation_id>"
 
 # Import a space
 terraform import arize_space.prod "<space_id>"

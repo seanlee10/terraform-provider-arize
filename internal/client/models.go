@@ -9,15 +9,6 @@ type User struct {
 	CreatedAt string `json:"createdAt"`
 }
 
-type CreateUserInput struct {
-	Email string `json:"email"`
-	Name  string `json:"name,omitempty"`
-}
-
-type UpdateUserInput struct {
-	Name string `json:"name,omitempty"`
-}
-
 type APIKey struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`

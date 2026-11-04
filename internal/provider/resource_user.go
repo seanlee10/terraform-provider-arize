@@ -2,8 +2,11 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -20,7 +23,8 @@ func NewUserResource() resource.Resource {
 }
 
 type UserResource struct {
-	client *client.Client
+	client *client.Client     // GraphQL: user type on import
+	rest   *client.RESTClient // REST: everything else
 }
 
 type UserResourceModel struct {
@@ -38,7 +42,9 @@ func (r *UserResource) Metadata(ctx context.Context, req resource.MetadataReques
 
 func (r *UserResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Manages an Arize user.",
+		MarkdownDescription: "Manages an Arize user. Creating one sends an email invitation with the Member account role; " +
+			"until it is accepted the user has an invitation ID and status `invited`. " +
+			"Destroying the user blocks it in Arize permanently: the same email can't be invited again.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				MarkdownDescription: "The unique identifier for the user.",
@@ -52,11 +58,11 @@ func (r *UserResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 				Required:            true,
 			},
 			"name": schema.StringAttribute{
-				MarkdownDescription: "The full name of the user.",
+				MarkdownDescription: "The full name of the user. Required to create a user.",
 				Optional:            true,
 			},
 			"status": schema.StringAttribute{
-				MarkdownDescription: "The status of the user (active, pending, etc).",
+				MarkdownDescription: "The status of the user: `active`, `invited`, or `expired`.",
 				Computed:            true,
 			},
 			"user_type": schema.StringAttribute{
@@ -86,6 +92,7 @@ func (r *UserResource) Configure(ctx context.Context, req resource.ConfigureRequ
 	}
 
 	r.client = client.New(config.Endpoint.ValueString(), config.APIKey.ValueString())
+	r.rest = client.NewREST(config.RESTEndpoint.ValueString(), config.APIKey.ValueString())
 }
 
 func (r *UserResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -95,22 +102,20 @@ func (r *UserResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
-	input := &client.CreateUserInput{
-		Email: data.Email.ValueString(),
-		Name:  data.Name.ValueString(),
+	if data.Name.ValueString() == "" {
+		resp.Diagnostics.AddAttributeError(path.Root("name"), "Missing user name", "Arize requires a name to create a user.")
+		return
 	}
 
-	user, err := r.client.CreateUser(ctx, input)
+	// Creates an invitation (MEMBER account role, email link). Its ID is an
+	// invitation ID until the user accepts; Read follows the change by email.
+	user, err := r.rest.CreateUser(ctx, data.Name.ValueString(), data.Email.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create user", err.Error())
 		return
 	}
 
-	data.ID = types.StringValue(user.ID)
-	data.Status = types.StringValue(user.Status)
-	data.UserType = types.StringValue(user.UserType)
-	data.CreatedAt = types.StringValue(user.CreatedAt)
-
+	applyRESTUser(&data, user)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -121,39 +126,46 @@ func (r *UserResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 		return
 	}
 
-	user, err := r.client.GetUser(ctx, data.ID.ValueString())
+	user, err := r.rest.GetUserREST(ctx, data.ID.ValueString())
+	if errors.Is(err, client.ErrUserNotFound) {
+		// An accepted invitation becomes a user with a new ID: find it by email.
+		user, err = r.rest.FindUserByEmail(ctx, data.Email.ValueString())
+		if errors.Is(err, client.ErrUserNotFound) {
+			resp.State.RemoveResource(ctx)
+			return
+		}
+	}
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to read user", err.Error())
 		return
 	}
 
-	data.Email = types.StringValue(user.Email)
-	data.Name = types.StringValue(user.Name)
-	data.Status = types.StringValue(user.Status)
-	data.UserType = types.StringValue(user.UserType)
-	data.CreatedAt = types.StringValue(user.CreatedAt)
-
+	applyRESTUser(&data, user)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *UserResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var data UserResourceModel
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+	var plan, state UserResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	input := &client.UpdateUserInput{
-		Name: data.Name.ValueString(),
+	// An invitation keeps the configured name in state only; the name is
+	// applied once the user has accepted and is active.
+	if state.Status.ValueString() == "active" && !plan.Name.Equal(state.Name) {
+		if err := r.rest.RenameUser(ctx, state.ID.ValueString(), plan.Name.ValueString()); err != nil {
+			resp.Diagnostics.AddError("Failed to update user", err.Error())
+			return
+		}
 	}
 
-	_, err := r.client.UpdateUser(ctx, data.ID.ValueString(), input)
-	if err != nil {
-		resp.Diagnostics.AddError("Failed to update user", err.Error())
-		return
-	}
-
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	plan.ID = state.ID
+	plan.Status = state.Status
+	plan.UserType = state.UserType
+	plan.CreatedAt = state.CreatedAt
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
 func (r *UserResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
@@ -163,28 +175,44 @@ func (r *UserResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 		return
 	}
 
-	if err := r.client.DeleteUser(ctx, data.ID.ValueString()); err != nil {
+	// Arize blocks the user permanently; the email can't be invited again.
+	if err := r.rest.DeleteUser(ctx, data.ID.ValueString()); err != nil {
 		resp.Diagnostics.AddError("Failed to delete user", err.Error())
 		return
 	}
 }
 
+// ImportState takes a user ID or a pending invitation ID.
 func (r *UserResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	userID := req.ID
-	user, err := r.client.GetUser(ctx, userID)
+	user, err := r.rest.GetUserREST(ctx, req.ID)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to import user", err.Error())
 		return
 	}
 
-	data := UserResourceModel{
-		ID:        types.StringValue(user.ID),
-		Email:     types.StringValue(user.Email),
-		Name:      types.StringValue(user.Name),
-		Status:    types.StringValue(user.Status),
-		UserType:  types.StringValue(user.UserType),
-		CreatedAt: types.StringValue(user.CreatedAt),
+	data := UserResourceModel{Name: types.StringValue(user.Name), UserType: types.StringNull()}
+	// REST doesn't report the user type; GraphQL does for active users.
+	if gqlUser, err := r.client.GetUser(ctx, user.ID); err == nil && gqlUser.UserType != "" {
+		data.UserType = types.StringValue(gqlUser.UserType)
 	}
-
+	applyRESTUser(&data, user)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+// applyRESTUser copies a REST user or invitation into the model. Status is
+// lowercased to match the values GraphQL stored before. For invitations the
+// API reports the email as the name, so the existing name is kept until the
+// user is active.
+func applyRESTUser(data *UserResourceModel, user *client.RESTUser) {
+	status := strings.ToLower(user.Status)
+	data.ID = types.StringValue(user.ID)
+	data.Email = types.StringValue(user.Email)
+	data.Status = types.StringValue(status)
+	data.CreatedAt = types.StringValue(user.CreatedAt)
+	if status == "active" || data.Name.IsNull() || data.Name.ValueString() == "" {
+		data.Name = types.StringValue(user.Name)
+	}
+	if data.UserType.IsNull() || data.UserType.IsUnknown() {
+		data.UserType = types.StringValue("human")
+	}
 }
