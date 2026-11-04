@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -67,10 +68,16 @@ func (r *SpaceMemberResource) Schema(ctx context.Context, req resource.SchemaReq
 			"email": schema.StringAttribute{
 				MarkdownDescription: "The email of the user (computed).",
 				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "The name of the user (computed).",
 				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}
@@ -134,8 +141,17 @@ func (r *SpaceMemberResource) Read(ctx context.Context, req resource.ReadRequest
 		return
 	}
 
-	// For now, we just return the state. In a real implementation,
-	// we'd query the API to verify the membership still exists.
+	su, err := r.client.GetSpaceUser(ctx, data.SpaceID.ValueString(), data.UserID.ValueString())
+	if errors.Is(err, client.ErrSpaceMemberNotFound) {
+		resp.State.RemoveResource(ctx)
+		return
+	}
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to read space membership", err.Error())
+		return
+	}
+
+	applySpaceUser(&data, su)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -163,6 +179,15 @@ func (r *SpaceMemberResource) Update(ctx context.Context, req resource.UpdateReq
 		return
 	}
 
+	// Only the role changes in place; keep the computed values from state.
+	var state SpaceMemberResourceModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	data.ID = state.ID
+	data.Email = state.Email
+	data.Name = state.Name
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -173,7 +198,21 @@ func (r *SpaceMemberResource) Delete(ctx context.Context, req resource.DeleteReq
 		return
 	}
 
-	// For now, we don't have a removeSpaceMember mutation implemented.
-	// In a real implementation, we'd call the API to remove the user from the space.
-	// For testing purposes, we'll just remove from state.
+	if err := r.client.RemoveSpaceMember(ctx, data.SpaceID.ValueString(), data.UserID.ValueString()); err != nil {
+		resp.Diagnostics.AddError("Failed to remove space member", err.Error())
+	}
+}
+
+// applySpaceUser refreshes the model from the user's entry in the space. An
+// account admin's entry hides any explicit membership (no role), so the state
+// is kept as it is for those.
+func applySpaceUser(data *SpaceMemberResourceModel, su *client.SpaceUser) {
+	if !su.IsExplicit() {
+		return
+	}
+	if su.Role != nil {
+		data.Role = types.StringValue(*su.Role)
+	}
+	data.Email = types.StringValue(su.User.Email)
+	data.Name = types.StringValue(su.User.Name)
 }

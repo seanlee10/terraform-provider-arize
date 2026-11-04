@@ -97,6 +97,14 @@ Verified against the live API:
 
 Valid space roles: `admin`, `member`, `readOnly`, `annotator`. These are case-sensitive enum values used in mutations.
 
+### Space Members (`resource_space_member.go`, `client/space_members.go`)
+
+Verified against the live API:
+- Read finds the user in `Space.spaceUsers` (paged, 50 per page); Delete calls `removeSpaceMember(input: {spaceId, userId})`, which returns a `NOT_FOUND` error (in `extensions.code`) when the membership is already gone.
+- Explicit members are listed with `membership: EXPLICIT_MEMBERSHIP` and their role. Account admins are listed as `ACCOUNT_ADMIN` with a null role whether or not they were added explicitly, so Read keeps state for them. A membership isn't a `Node`.
+- `node(id)` on a deleted space returns a `NOT_FOUND` error, not null.
+- `assignSpaceMembership` also changes the role of an existing member, except to `annotator` ("User's space role cannot be changed to annotator").
+
 ### Roles (`resource_role.go`, `client/roles.go`)
 
 GraphQL has no role list or mutations (roles are reachable only via `node(id)` and `SpaceUser.customRole`), so roles use the REST API `/v2/roles`:
@@ -132,10 +140,9 @@ API behavior verified against the live API, which the resource depends on:
 
 ### Known Limitations
 
-1. **Remove Space Member Not Implemented** - `removeSpaceMember` mutation exists but isn't integrated; deletion is a no-op.
-2. **API Keys Data Source Incomplete** - Not currently wired up; queries fail due to missing API endpoints.
-3. **Acceptance Tests Not Implemented** - `resource_*_test.go` files have skeleton tests only.
-4. **Evaluator Types** - Only template and code evaluators are supported; harness, remote, and System One evaluators are not.
+1. **API Keys Data Source Incomplete** - Not currently wired up; queries fail due to missing API endpoints.
+2. **Acceptance Tests Not Implemented** - `resource_*_test.go` files have skeleton tests only.
+3. **Evaluator Types** - Only template and code evaluators are supported; harness, remote, and System One evaluators are not.
 
 ## Development Workflow
 
