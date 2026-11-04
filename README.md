@@ -114,6 +114,8 @@ When adding users to spaces, choose from:
 - **`readOnly`** - Can view content but cannot edit
 - **`annotator`** - Can provide annotations and feedback
 
+Removing an `arize_space_member` removes the user from the space. Arize doesn't allow changing an existing member's role to `annotator`; to make someone an annotator, remove the membership and add it again with that role.
+
 ## SAML/SSO Configuration
 
 Configure enterprise Single Sign-On (SSO) using SAML:

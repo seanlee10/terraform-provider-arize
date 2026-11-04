@@ -53,9 +53,12 @@ type GraphQLResponse struct {
 }
 
 type GraphQLError struct {
-	Message string                 `json:"message"`
-	Code    string                 `json:"code,omitempty"`
-	Details map[string]interface{} `json:"details,omitempty"`
+	Message    string                 `json:"message"`
+	Code       string                 `json:"code,omitempty"`
+	Details    map[string]interface{} `json:"details,omitempty"`
+	Extensions struct {
+		Code string `json:"code"` // e.g. NOT_FOUND
+	} `json:"extensions"`
 }
 
 func (e *GraphQLError) Error() string {
@@ -106,7 +109,7 @@ func (c *Client) execute(ctx context.Context, query string, variables map[string
 	}
 
 	if len(gqlResp.Errors) > 0 {
-		return fmt.Errorf("GraphQL error: %v", gqlResp.Errors[0].Error())
+		return fmt.Errorf("GraphQL error: %w", &gqlResp.Errors[0])
 	}
 
 	if err := json.Unmarshal(respBody, &gqlResp); err == nil {
