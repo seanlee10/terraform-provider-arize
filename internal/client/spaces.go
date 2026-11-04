@@ -20,3 +20,10 @@ func (c *RESTClient) DeleteSpace(ctx context.Context, spaceID string) error {
 	}
 	return nil
 }
+
+func (c *RESTClient) UpdateSpace(ctx context.Context, spaceID string, input *UpdateSpaceInput) error {
+	if err := c.do(ctx, http.MethodPatch, "/v2/spaces/"+url.PathEscape(spaceID), input, nil); err != nil {
+		return fmt.Errorf("failed to update space: %w", err)
+	}
+	return nil
+}

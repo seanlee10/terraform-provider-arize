@@ -216,10 +216,31 @@ func (r *SpaceResource) Read(ctx context.Context, req resource.ReadRequest, resp
 }
 
 func (r *SpaceResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	resp.Diagnostics.AddError(
-		"Space updates not yet supported",
-		"Space updates will be implemented in a future version.",
-	)
+	var plan, state SpaceResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// REST, like DeleteSpace: the provider never used GraphQL updateSpace.
+	// A null description is sent as null, which clears it.
+	err := r.restClient.UpdateSpace(ctx, state.ID.ValueString(), &client.UpdateSpaceInput{
+		Name:        plan.Name.ValueString(),
+		Description: plan.Description.ValueStringPointer(),
+		IsPrivate:   plan.Private.ValueBool(),
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to update space", err.Error())
+		return
+	}
+
+	plan.ID = state.ID
+	plan.UUID = state.UUID
+	plan.CreatedAt = state.CreatedAt
+	plan.OrganizationID = state.OrganizationID
+	plan.Organization = state.Organization
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
 func (r *SpaceResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
