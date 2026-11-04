@@ -54,8 +54,19 @@ func (r *UserResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 				},
 			},
 			"email": schema.StringAttribute{
-				MarkdownDescription: "The email address of the user.",
-				Required:            true,
+				MarkdownDescription: "The email address of the user. Arize can't change a user's email, so changing it " +
+					"replaces the user: the old user is blocked permanently and the new email gets an invitation. " +
+					"Case-only changes are ignored.",
+				Required: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplaceIf(
+						func(ctx context.Context, req planmodifier.StringRequest, resp *stringplanmodifier.RequiresReplaceIfFuncResponse) {
+							resp.RequiresReplace = emailChanged(req.StateValue.ValueString(), req.PlanValue.ValueString())
+						},
+						"Arize can't change a user's email, so a different email replaces the user.",
+						"Arize can't change a user's email, so a different email replaces the user.",
+					),
+				},
 			},
 			"name": schema.StringAttribute{
 				MarkdownDescription: "The full name of the user. Required to create a user.",
@@ -206,7 +217,10 @@ func (r *UserResource) ImportState(ctx context.Context, req resource.ImportState
 func applyRESTUser(data *UserResourceModel, user *client.RESTUser) {
 	status := strings.ToLower(user.Status)
 	data.ID = types.StringValue(user.ID)
-	data.Email = types.StringValue(user.Email)
+	// Arize lowercases emails; keep the configured case so plans stay clean.
+	if !strings.EqualFold(data.Email.ValueString(), user.Email) {
+		data.Email = types.StringValue(user.Email)
+	}
 	data.Status = types.StringValue(status)
 	data.CreatedAt = types.StringValue(user.CreatedAt)
 	if status == "active" || data.Name.IsNull() || data.Name.ValueString() == "" {
@@ -215,4 +229,10 @@ func applyRESTUser(data *UserResourceModel, user *client.RESTUser) {
 	if data.UserType.IsNull() || data.UserType.IsUnknown() {
 		data.UserType = types.StringValue("human")
 	}
+}
+
+// emailChanged reports whether an email change needs a new user. Emails are
+// compared case-insensitively, as Arize does.
+func emailChanged(state, plan string) bool {
+	return !strings.EqualFold(state, plan)
 }

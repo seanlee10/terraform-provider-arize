@@ -50,3 +50,39 @@ func TestApplyRESTUser_UserTypeKeptOrDefaultsToHuman(t *testing.T) {
 		t.Fatalf("user_type = %q, want \"human\" for users created through the API", fresh.UserType.ValueString())
 	}
 }
+
+func TestApplyRESTUser_KeepsConfiguredEmailCase(t *testing.T) {
+	data := UserResourceModel{Email: types.StringValue("Alice@Example.com")}
+
+	applyRESTUser(&data, &client.RESTUser{ID: "u1", Email: "alice@example.com", Status: "ACTIVE"})
+
+	if data.Email.ValueString() != "Alice@Example.com" {
+		t.Fatalf("email = %q, want configured case kept (Arize stores emails lowercased)", data.Email.ValueString())
+	}
+}
+
+func TestApplyRESTUser_TakesServerEmailWhenDifferent(t *testing.T) {
+	data := UserResourceModel{Email: types.StringValue("old@example.com")}
+
+	applyRESTUser(&data, &client.RESTUser{ID: "u1", Email: "new@example.com", Status: "ACTIVE"})
+
+	if data.Email.ValueString() != "new@example.com" {
+		t.Fatalf("email = %q, want server value so the drift shows in plan", data.Email.ValueString())
+	}
+}
+
+func TestEmailChangeRequiresReplace(t *testing.T) {
+	cases := []struct {
+		state, plan string
+		want        bool
+	}{
+		{"alice@example.com", "bob@example.com", true},
+		{"alice@example.com", "Alice@Example.com", false},
+		{"alice@example.com", "alice@example.com", false},
+	}
+	for _, c := range cases {
+		if got := emailChanged(c.state, c.plan); got != c.want {
+			t.Errorf("emailChanged(%q, %q) = %v, want %v", c.state, c.plan, got, c.want)
+		}
+	}
+}

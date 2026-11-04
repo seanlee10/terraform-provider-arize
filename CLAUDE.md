@@ -85,6 +85,7 @@ Verified against the live API:
 - Invitations can't be added to spaces (GraphQL `assignSpaceMembership` rejects the ID, REST requires an existing user), so memberships work only after acceptance. `assignSpaceMembership` adds the organization membership itself.
 - `DELETE /v2/users/{id}` blocks the user permanently; the email can't be invited again.
 - REST status is uppercase; Read lowercases it to match values stored from GraphQL.
+- `PATCH /v2/users/{id}` accepts only `name` (`email` is ignored like an unknown field), so an email change forces replacement. Arize stores emails lowercased; the replace check and Read compare case-insensitively.
 
 ### Spaces (`resource_space.go`)
 
