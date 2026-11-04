@@ -22,10 +22,12 @@ type CreateSpaceInput struct {
 	Description            string `json:"description,omitempty"`
 }
 
+// UpdateSpaceInput is the REST PATCH /v2/spaces/{id} body. Every field is
+// sent: a nil Description is sent as null, which clears it.
 type UpdateSpaceInput struct {
-	Name        string `json:"name,omitempty"`
-	Description string `json:"description,omitempty"`
-	Private     bool   `json:"private,omitempty"`
+	Name        string  `json:"name"`
+	Description *string `json:"description"`
+	IsPrivate   bool    `json:"is_private"`
 }
 
 type SpaceMember struct {

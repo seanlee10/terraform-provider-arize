@@ -78,7 +78,8 @@ query GetUser($id: ID!) {
 ### Spaces (`resource_space.go`)
 
 - An account can have several organizations; `organization_id` picks one (default: the first from `account.organizations`) and forces replacement on change.
-- An unset description reads back as `""`; Read keeps it null, otherwise every plan shows an update and Update is unsupported.
+- An unset description reads back as `""`; Read keeps it null, otherwise every plan shows an update.
+- Update uses REST `PATCH /v2/spaces/{id}` and always sends `name`, `description`, and `is_private`; a `null` description clears it (the API rejects `""`). Verified against the live API.
 
 ### Space Roles
 
@@ -119,11 +120,10 @@ API behavior verified against the live API, which the resource depends on:
 
 ### Known Limitations
 
-1. **Space Updates Not Implemented** - `updateSpace` mutation exists but isn't called; resource.Update() returns error.
-2. **Remove Space Member Not Implemented** - `removeSpaceMember` mutation exists but isn't integrated; deletion is a no-op.
-3. **API Keys Data Source Incomplete** - Not currently wired up; queries fail due to missing API endpoints.
-4. **Acceptance Tests Not Implemented** - `resource_*_test.go` files have skeleton tests only.
-5. **Evaluator Types** - Only template and code evaluators are supported; harness, remote, and System One evaluators are not.
+1. **Remove Space Member Not Implemented** - `removeSpaceMember` mutation exists but isn't integrated; deletion is a no-op.
+2. **API Keys Data Source Incomplete** - Not currently wired up; queries fail due to missing API endpoints.
+3. **Acceptance Tests Not Implemented** - `resource_*_test.go` files have skeleton tests only.
+4. **Evaluator Types** - Only template and code evaluators are supported; harness, remote, and System One evaluators are not.
 
 ## Development Workflow
 
