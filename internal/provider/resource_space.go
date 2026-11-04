@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/arize-ai/terraform-provider-arize/internal/client"
@@ -184,6 +185,10 @@ func (r *SpaceResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	}
 
 	space, err := r.client.GetSpace(ctx, data.ID.ValueString())
+	if errors.Is(err, client.ErrSpaceNotFound) {
+		resp.State.RemoveResource(ctx)
+		return
+	}
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to read space", err.Error())
 		return
