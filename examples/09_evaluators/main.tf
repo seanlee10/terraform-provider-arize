@@ -9,7 +9,8 @@
 terraform {
   required_providers {
     arize = {
-      source = "seanlee10/arize"
+      source  = "seanlee10/arize"
+      version = "~> 0.3.6"
     }
   }
 }

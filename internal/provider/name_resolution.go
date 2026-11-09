@@ -102,3 +102,23 @@ func resolveIntegrationID(ctx context.Context, rc *client.RESTClient, value, spa
 	}
 	return id, err
 }
+
+// integrationNameExists checks that value is an ID or that some LLM
+// integration in the account has that name (any case), without requiring it
+// to be unique: used at plan time when the space isn't known yet.
+func integrationNameExists(ctx context.Context, rc *client.RESTClient, value string) error {
+	if isArizeID(value) {
+		return nil
+	}
+	integrations, err := rc.ListAIIntegrations(ctx, "", "")
+	if err != nil {
+		return err
+	}
+	for _, it := range integrations {
+		if strings.EqualFold(it.Name, value) {
+			return nil
+		}
+	}
+	_, err = matchName("LLM integration", value, "IDs are listed by `ax ai-integrations list`", integrations)
+	return err
+}

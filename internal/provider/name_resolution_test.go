@@ -77,3 +77,20 @@ func TestOrganizationIDState(t *testing.T) {
 		}
 	}
 }
+
+func TestRESTEndpointFor(t *testing.T) {
+	for endpoint, want := range map[string]struct {
+		url string
+		ok  bool
+	}{
+		"https://app.arize.com/graphql":              {"https://api.arize.com", true},
+		"https://app.eu-west-1a.arize.com/graphql":   {"https://api.eu-west-1a.arize.com", true},
+		"https://arize.internal.example.com/graphql": {defaultRESTEndpoint, false},
+		"not a url": {defaultRESTEndpoint, false},
+	} {
+		got, ok := restEndpointFor(endpoint)
+		if got != want.url || ok != want.ok {
+			t.Errorf("restEndpointFor(%q) = %q, %v; want %q, %v", endpoint, got, ok, want.url, want.ok)
+		}
+	}
+}

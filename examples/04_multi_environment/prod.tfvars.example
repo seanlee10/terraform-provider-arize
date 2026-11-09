@@ -1,0 +1,7 @@
+# Copy to prod.tfvars and run: terraform apply -var-file=prod.tfvars
+environment       = "prod"
+enable_production = true
+team_emails = [
+  "alice@company.com",
+  "bob@company.com",
+]

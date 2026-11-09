@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Terraform provider for Arize, enabling Infrastructure as Code management of Arize resources (users, custom roles, API keys, spaces, space memberships, SAML IdPs, and evaluators). It uses the Terraform Plugin Framework (Go-based) and communicates with Arize's GraphQL API, plus the REST API for custom roles.
+This is a Terraform provider for Arize, enabling Infrastructure as Code management of Arize resources (users, custom roles, spaces, space memberships, SAML IdPs, evaluators, and datasets). It uses the Terraform Plugin Framework (Go-based) and communicates with Arize's GraphQL API, plus the REST API for custom roles.
 
 ## Architecture
 
@@ -17,7 +17,7 @@ Terraform Plugin Framework
          ↓
 Provider (provider.go)
   ├── Resources (7 total)
-  ├── Data Sources (4 total)
+  ├── Data Sources (3 total)
   └── Configuration (API key, endpoint)
          ↓
 GraphQL Client (internal/client/)
@@ -32,14 +32,14 @@ Arize GraphQL API (app.arize.com/graphql)
 
 **Provider & Resources** (`internal/provider/`)
 - `provider.go` - Main provider configuration, registers resources and data sources
-- `resource_*.go` - CRUD operations for: user, role, api_key, space, space_member
-- `data_source_*.go` - Read-only data sources for: users, roles, api_keys
+- `resource_*.go` - CRUD operations for: user, role, space, space_member, saml_idp, evaluator, dataset
+- `data_source_*.go` - Read-only data sources for: users, roles, evaluators
 
 **GraphQL Client** (`internal/client/`)
 - `graphql.go` - HTTP client with x-api-key authentication
 - `queries.go` - GraphQL read operations (GetUser, ListUsers, etc.)
 - `mutations.go` - GraphQL write operations (CreateSpace, AssignSpaceMembership, etc.)
-- `models.go` - Data structures for users, API keys
+- `models.go` - Data structures for users
 - `users_rest.go` - REST user CRUD (the GraphQL user mutations no longer exist)
 - `rest.go`, `roles.go`, `spaces.go` - REST client (Bearer auth), custom role CRUD, and space deletion (the GraphQL `deleteSpace` mutation returns an internal server error)
 - `models_space.go` - Data structures for spaces and space members
@@ -49,10 +49,10 @@ Arize GraphQL API (app.arize.com/graphql)
 **Authentication Header**
 The GraphQL API uses the `x-api-key` header, NOT `Authorization: Bearer`. This is different from many GraphQL APIs and is easy to get wrong. The REST API (`api.arize.com/v2`, `client/rest.go`) uses `Authorization: Bearer <same key>`.
 
-A rejected or empty key gets HTTP 401 with a plain-text `Unauthorized` body (not JSON), so `execute()` checks the status before parsing. A key with a trailing newline gets 400.
+A rejected or empty key gets HTTP 401 with a plain-text `Unauthorized` body (not JSON), so `execute()` checks the status before parsing. Any other status ≥ 400 without GraphQL `errors` is also an error: an empty result would read as "deleted" and drop the resource from state. Configure trims whitespace from the key (a trailing newline can't be sent in a header). Both clients time out after 2 minutes.
 
 **Regions**
-Keys only work on their own cluster; a valid key sent to another cluster gets 401. EU users must set both `endpoint = "https://app.eu-west-1a.arize.com/graphql"` and `rest_endpoint = "https://api.eu-west-1a.arize.com"`.
+Keys only work on their own cluster; a valid key sent to another cluster gets 401 (401 errors say so). EU users set `endpoint = "https://app.eu-west-1a.arize.com/graphql"`; an unset `rest_endpoint` is derived from it (`app.<region>` → `https://api.<region>`, `restEndpointFor`), with a warning when the endpoint isn't in that form. Before v0.3.6 it always defaulted to the US REST API, so EU users without `rest_endpoint` could create spaces but not update or delete them.
 
 **Query Patterns**
 - **List resources**: Via `account.users`, `space.evaluators`, etc. (not root-level queries)
@@ -94,6 +94,8 @@ Verified against the live API:
 - An unset description reads back as `""`; Read keeps it null, otherwise every plan shows an update.
 - Update uses REST `PATCH /v2/spaces/{id}` and always sends `name`, `description`, and `is_private`; a `null` description clears it (the API rejects `""`). Verified against the live API.
 - `createSpace` returns only `Not Authorized` (`extensions.code: UNAUTHORIZED`) for any organization the key can't create spaces in, including a nonexistent one. Create then looks up `viewer.user` (email, `accountRole`) and each organization's `accountOrganizationUsers(search: email)` (partial match, so compare user IDs) and reports the user's role in every organization (`space_create_error.go`). Account admins are listed as `ACCOUNT_ADMIN` with no role.
+- Import takes the space ID; `organization_id` is stored as the organization's ID.
+- A `""` description is sent as `null` on update (the API rejects `""`); `organization_id`/`organization_name` reject `""`.
 - GraphQL `account.organizations` and REST `/v2/organizations` return organizations in different orders, so "the first organization" isn't stable across APIs.
 - Who can create spaces (from the Arize source, `isAccountOrgMember` / `hasHybridOrgMemberAccess`): account admins in any organization of their account, and users with the `admin` or `member` organization role (legacy role or predefined role binding); read-only users can't. An organization from another account is always refused.
 
@@ -117,7 +119,9 @@ Verified against the live API:
 - Read finds the user in `Space.spaceUsers` (paged, 50 per page); Delete calls `removeSpaceMember(input: {spaceId, userId})`, which returns a `NOT_FOUND` error (in `extensions.code`) when the membership is already gone.
 - Explicit members are listed with `membership: EXPLICIT_MEMBERSHIP` and their role. Account admins are listed as `ACCOUNT_ADMIN` with a null role whether or not they were added explicitly, so Read keeps state for them. A membership isn't a `Node`.
 - `node(id)` on a deleted space returns a `NOT_FOUND` error, not null.
-- `assignSpaceMembership` also changes the role of an existing member, except to `annotator` ("User's space role cannot be changed to annotator").
+- `assignSpaceMembership` also changes the role of an existing member. The `annotator` space role follows the user's account role: users with the Annotator account role can only be annotators ("User's space role cannot be changed to a non-annotator role"), and other users can never be, not even when added fresh ("…cannot be changed to annotator"). `spaceRoleError` explains this.
+- Pending invitations (`AccountInvitation:` IDs) can't be added; Create checks `user_id` and says to apply again after the user accepts.
+- Import ID is `<space_id>:<user_id>` (global IDs never contain `:`). Read sets email and name for account admins too, but keeps the configured role for them.
 
 ### Roles (`resource_role.go`, `client/roles.go`)
 
@@ -151,7 +155,8 @@ API behavior verified against the live API, which the resource depends on:
 - Versioned: `editEvaluator` changes only name/description; any config change needs `createEvaluatorVersion` (commit message required). Update compares serialized config inputs to decide whether to publish a version.
 - `dataGranularityType` cannot change after creation, so it is `RequiresReplace`.
 - Evaluator names and result column names (`config.name`) are unique per space.
-- `node(id)` on a deleted evaluator returns "Unauthorized access", not null; `GetEvaluator` confirms absence via `Space.evaluators` before returning `ErrEvaluatorNotFound`.
+- `node(id)` on a deleted evaluator returns "Unauthorized access", not null; `GetEvaluator` confirms absence via `Space.evaluators` before returning `ErrEvaluatorNotFound`. A deleted space (NOT_FOUND or null node in the listing) also means `ErrEvaluatorNotFound`, so its evaluators drop from state; Delete treats an already-gone evaluator as success.
+- `integration_name` at plan time: with an unknown `space_id` (space created in the same apply) only checks that some integration has the name, since a name ambiguous across the account may be unique in the space; an unchanged name keeps its ID only while `space_id` is unchanged.
 - `Space.evaluators(first: 100)` exceeds the query complexity limit (1000); page size is 50.
 - Arize doesn't check `modelName` against the integration's model list when an evaluator is created.
 - `llmConfig` input requires all four fields (`integrationId`, `modelName`, `invocationParameters`, `providerParameters`); the server rewrites invocation parameters per provider, so Read keeps the configured values.
@@ -162,7 +167,7 @@ API behavior verified against the live API, which the resource depends on:
 
 ### Known Limitations
 
-1. **API Keys Data Source Incomplete** - Not currently wired up; queries fail due to missing API endpoints.
+1. **No API key management** - `arize_api_key` and `arize_api_keys` were removed in v0.3.6: they used GraphQL `createApiKey`/`deleteApiKey`/`apiKey`/`apiKeys`, which don't exist (GraphQL has `createUserApiKey`, `createServiceApiKey`, `revokeApiKey`; REST has `/v2/api-keys`), so they never worked. A rewrite would use REST.
 2. **Acceptance Tests Not Implemented** - `resource_*_test.go` files have skeleton tests only.
 3. **Evaluator Types** - Only template and code evaluators are supported; harness, remote, and System One evaluators are not.
 

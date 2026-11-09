@@ -5,7 +5,8 @@
 terraform {
   required_providers {
     arize = {
-      source = "seanlee10/arize"
+      source  = "seanlee10/arize"
+      version = "~> 0.3.6"
     }
   }
 }
@@ -15,6 +16,12 @@ provider "arize" {}
 variable "org_id" {
   description = "Arize organization that SAML users join (Settings -> Organizations)"
   type        = string
+}
+
+variable "data_scientist_role_name" {
+  description = "Name of a custom role created in the Arize UI"
+  type        = string
+  default     = "data-scientist"
 }
 
 # ============================================================================
@@ -36,10 +43,9 @@ locals {
     role.name => role.id
   }
 
-  # Example: Find a specific role
-  data_scientist_role_id = local.role_ids["data-scientist"]
-  analyst_role_id        = local.role_ids["analyst"]
-  admin_role_id          = local.role_ids["Account Admin"] # predefined
+  # Look up a role by name. lookup() returns null when the account has no
+  # such role; the precondition on arize_saml_idp turns that into a clear error.
+  data_scientist_role_id = lookup(local.role_ids, var.data_scientist_role_name, null)
 }
 
 # ============================================================================
@@ -80,28 +86,26 @@ resource "arize_saml_idp" "company_saml" {
     org_role           = "member"
     space_custom_roles = { (arize_space.data_science.id) = local.data_scientist_role_id }
   }]
+
+  lifecycle {
+    precondition {
+      condition     = local.data_scientist_role_id != null
+      error_message = "No role named \"${var.data_scientist_role_name}\" exists in Arize. Create it in the UI or set data_scientist_role_name."
+    }
+  }
 }
 
 # ============================================================================
-# STEP 5: Reference Roles in Space Assignments
+# STEP 5: The Space the Custom Role Applies To
 # ============================================================================
 
-# Create a space and assign users (they'll get custom roles via SAML)
+# Members of the IdP's data-science group get the custom role in this space
+# on their SAML login. (arize_space_member takes only the built-in space
+# roles: admin, member, readOnly, annotator.)
 resource "arize_space" "data_science" {
   name        = "data-science"
   private     = true
   description = "Data science team with custom role permissions"
-}
-
-resource "arize_user" "alice" {
-  email = "alice@company.com"
-  name  = "Alice - Data Scientist"
-}
-
-resource "arize_space_member" "alice_admin" {
-  space_id = arize_space.data_science.id
-  user_id  = arize_user.alice.id
-  role     = "admin"  # Space role
 }
 
 # ============================================================================
@@ -154,8 +158,9 @@ output "roles_with_write_permission" {
 # 2. In Terraform:
 #    - Use data "arize_roles" "all" {} to fetch all roles
 #    - Create a local map: role_ids = { for role in ... }
-#    - Reference by name: local.role_ids["data-scientist"]
-#    - Use in SAML, space assignments, etc.
+#    - Reference by name: lookup(local.role_ids, "data-scientist", null),
+#      with a precondition so a missing role fails with a clear message
+#    - Use in SAML role_mappings (space_custom_roles, project_roles)
 #
 # 3. Benefits:
 #    - No hardcoded role IDs
@@ -170,11 +175,11 @@ output "roles_with_write_permission" {
 # data "arize_roles" "all" {}
 #
 # locals {
-#   # Find exact role by name
-#   my_role = [
+#   # Find exact role by name; one() returns null if there is none
+#   my_role = one([
 #     for role in data.arize_roles.all.roles :
 #     role if role.name == "data-scientist"
-#   ][0]
+#   ])
 # }
 #
 # resource "arize_saml_idp" "sso" {
@@ -184,8 +189,14 @@ output "roles_with_write_permission" {
 #     attributes         = { groups = "data-science" }
 #     org_id             = var.org_id
 #     org_role           = "member"
-#     space_custom_roles = { (arize_space.data_science.id) = local.my_role.id }
+#     space_custom_roles = { (arize_space.data_science.id) = try(local.my_role.id, null) }
 #   }]
+#   lifecycle {
+#     precondition {
+#       condition     = local.my_role != null
+#       error_message = "Role data-scientist not found."
+#     }
+#   }
 # }
 #
 # ============================================================================
@@ -195,7 +206,7 @@ output "roles_with_write_permission" {
 # ✅ Use data source to read roles created in UI
 # ✅ Create a local map for easy reference by name
 # ✅ Filter roles using for expressions for complex queries
-# ✅ Reference role IDs in SAML, space assignments, etc.
+# ✅ Reference role IDs in SAML role mappings
 #
 # ❌ Don't hardcode role IDs - use the data source instead
 # ❌ Don't assume role names - filter and check existence first
