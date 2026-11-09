@@ -20,8 +20,9 @@ import (
 )
 
 var (
-	_ resource.Resource               = (*SpaceResource)(nil)
-	_ resource.ResourceWithModifyPlan = (*SpaceResource)(nil)
+	_ resource.Resource                = (*SpaceResource)(nil)
+	_ resource.ResourceWithModifyPlan  = (*SpaceResource)(nil)
+	_ resource.ResourceWithImportState = (*SpaceResource)(nil)
 )
 
 func NewSpaceResource() resource.Resource {
@@ -94,6 +95,7 @@ func (r *SpaceResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 				Computed: true,
 				Validators: []validator.String{
 					stringvalidator.ConflictsWith(path.MatchRoot("organization_name")),
+					stringvalidator.LengthAtLeast(1),
 				},
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
@@ -105,7 +107,8 @@ func (r *SpaceResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 			"organization_name": schema.StringAttribute{
 				MarkdownDescription: "The name of the organization to create the space in, as shown in Arize. " +
 					"Set this or `organization_id`. Changing it to a different organization forces a new space.",
-				Optional: true,
+				Optional:   true,
+				Validators: []validator.String{stringvalidator.LengthAtLeast(1)},
 			},
 			"organization": schema.SingleNestedAttribute{
 				MarkdownDescription: "The organization that owns the space.",
@@ -280,7 +283,7 @@ func (r *SpaceResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	// A null description is sent as null, which clears it.
 	err := r.restClient.UpdateSpace(ctx, state.ID.ValueString(), &client.UpdateSpaceInput{
 		Name:        plan.Name.ValueString(),
-		Description: plan.Description.ValueStringPointer(),
+		Description: nonEmpty(plan.Description.ValueStringPointer()), // the API rejects ""
 		IsPrivate:   plan.Private.ValueBool(),
 	})
 	if err != nil {
@@ -311,6 +314,12 @@ func (r *SpaceResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 		resp.Diagnostics.AddError("Failed to delete space", err.Error())
 		return
 	}
+}
+
+// ImportState takes a space ID. Read fills in the rest; organization_id is
+// stored as the organization's ID.
+func (r *SpaceResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
 // organizationIDState is the organization_id to store: the configured value

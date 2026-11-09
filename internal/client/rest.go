@@ -20,7 +20,7 @@ type RESTClient struct {
 
 func NewREST(baseURL, apiKey string) *RESTClient {
 	return &RESTClient{
-		httpClient: http.DefaultClient,
+		httpClient: &http.Client{Timeout: requestTimeout},
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		apiKey:     apiKey,
 	}
@@ -75,6 +75,13 @@ func (c *RESTClient) do(ctx context.Context, method, path string, body, result i
 		apiErr := &APIError{Status: resp.StatusCode, Title: http.StatusText(resp.StatusCode)}
 		_ = json.Unmarshal(respBody, apiErr)
 		apiErr.Status = resp.StatusCode
+		if resp.StatusCode == http.StatusUnauthorized {
+			if apiErr.Detail != "" {
+				apiErr.Detail = strings.TrimRight(apiErr.Detail, ".") + ". "
+			}
+			apiErr.Detail += "Arize rejected the API key at " + c.baseURL + ": " + unauthorizedHint +
+				" and rest_endpoint = \"https://api.eu-west-1a.arize.com\" (or leave rest_endpoint unset)."
+		}
 		return apiErr
 	}
 

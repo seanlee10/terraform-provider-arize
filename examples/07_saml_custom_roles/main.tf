@@ -4,7 +4,8 @@
 terraform {
   required_providers {
     arize = {
-      source = "seanlee10/arize"
+      source  = "seanlee10/arize"
+      version = "~> 0.3.6"
     }
   }
 }
@@ -120,63 +121,9 @@ resource "arize_space" "analytics_team" {
   description = "Analytics and insights space"
 }
 
-# ============================================================================
-# STEP 4: Create Users with Different Custom Roles
-# ============================================================================
-
-# Data scientist user - gets custom data-scientist role
-resource "arize_user" "alice_ds" {
-  email = "alice@company.com"
-  name  = "Alice - Data Scientist"
-}
-
-# ML ops engineer - gets custom ml-ops-engineer role
-resource "arize_user" "bob_mlops" {
-  email = "bob@company.com"
-  name  = "Bob - ML Ops Engineer"
-}
-
-# Analyst - gets custom analyst role
-resource "arize_user" "charlie_analyst" {
-  email = "charlie@company.com"
-  name  = "Charlie - Data Analyst"
-}
-
-# ============================================================================
-# STEP 5: Assign Users to Spaces with Custom Roles
-# ============================================================================
-
-# Data scientist in data science space (admin)
-resource "arize_space_member" "alice_ds_space" {
-  space_id = arize_space.data_science_team.id
-  user_id  = arize_user.alice_ds.id
-  role     = "admin"  # Space role (different from org role)
-}
-
-# ML ops engineer in ml ops space (admin)
-resource "arize_space_member" "bob_mlops_space" {
-  space_id = arize_space.ml_ops_team.id
-  user_id  = arize_user.bob_mlops.id
-  role     = "admin"
-}
-
-# Analyst in analytics space (read-only)
-resource "arize_space_member" "charlie_analyst_space" {
-  space_id = arize_space.analytics_team.id
-  user_id  = arize_user.charlie_analyst.id
-  role     = "readOnly"
-}
-
-# ============================================================================
-# STEP 6: Create API Keys with Custom Roles
-# ============================================================================
-
-# Service account for automated monitoring using custom role permissions
-resource "arize_api_key" "monitoring_service" {
-  name = "monitoring-automation"
-  # Permissions tied to the ml-ops-engineer custom role
-  permissions = ["read:models", "write:predictions"]
-}
+# Users get these roles on their SAML login; no arize_user or
+# arize_space_member resources are needed. arize_space_member takes only the
+# built-in space roles (admin, member, readOnly, annotator).
 
 # ============================================================================
 # OUTPUTS
@@ -184,9 +131,9 @@ resource "arize_api_key" "monitoring_service" {
 
 output "custom_roles" {
   value = {
-    data_scientist   = arize_role.data_scientist.id
-    ml_ops_engineer  = arize_role.ml_ops_engineer.id
-    analyst          = arize_role.analyst.id
+    data_scientist  = arize_role.data_scientist.id
+    ml_ops_engineer = arize_role.ml_ops_engineer.id
+    analyst         = arize_role.analyst.id
   }
   description = "Custom role IDs for reference"
 }
@@ -198,38 +145,23 @@ output "saml_idp_with_custom_role" {
 
 output "team_structure" {
   value = {
-    data_science = {
+    data-science = {
       space_id = arize_space.data_science_team.id
-      users = [
-        {
-          name     = arize_user.alice_ds.name
-          email    = arize_user.alice_ds.email
-          role     = "admin"
-        }
-      ]
+      org_role = "member"
+      role_id  = arize_role.data_scientist.id
     }
-    ml_ops = {
+    ml-ops = {
       space_id = arize_space.ml_ops_team.id
-      users = [
-        {
-          name     = arize_user.bob_mlops.name
-          email    = arize_user.bob_mlops.email
-          role     = "admin"
-        }
-      ]
+      org_role = "member"
+      role_id  = arize_role.ml_ops_engineer.id
     }
     analytics = {
       space_id = arize_space.analytics_team.id
-      users = [
-        {
-          name     = arize_user.charlie_analyst.name
-          email    = arize_user.charlie_analyst.email
-          role     = "readOnly"
-        }
-      ]
+      org_role = "readOnly"
+      role_id  = arize_role.analyst.id
     }
   }
-  description = "Team structure with custom roles"
+  description = "Custom space role each IdP group gets"
 }
 
 # ============================================================================

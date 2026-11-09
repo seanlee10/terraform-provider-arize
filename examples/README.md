@@ -1,223 +1,191 @@
 # Arize Terraform Provider Examples
 
-This directory contains practical examples demonstrating how to use the Arize Terraform provider to manage your Arize account infrastructure as code.
+Each example is a self-contained Terraform configuration in its own directory, with its own `terraform` block (`seanlee10/arize`, `~> 0.3.6`) and variables. Run one example at a time from its directory.
 
-## Examples Overview
+| Directory | What it shows |
+|-----------|---------------|
+| [`01_basic_setup/`](01_basic_setup/) | A space and an existing user added to it |
+| [`02_team_management/`](02_team_management/) | Inviting a team and giving each member a space role |
+| [`03_datasets/`](03_datasets/) | A dataset kept in sync with a CSV file, applied from CI |
+| [`04_multi_environment/`](04_multi_environment/) | Dev/staging/prod from one configuration, with a production safety check |
+| [`05_importing_existing_resources/`](05_importing_existing_resources/) | Data sources, `terraform import`, and mixing imported with new resources |
+| [`06_saml_sso_setup/`](06_saml_sso_setup/) | SAML IdP with role mappings to org and space roles |
+| [`07_saml_custom_roles/`](07_saml_custom_roles/) | Custom roles granted per space through SAML |
+| [`08_using_existing_roles/`](08_using_existing_roles/) | Looking up roles created in the Arize UI by name |
+| [`09_evaluators/`](09_evaluators/) | LLM-as-judge and Python code evaluators |
 
-### 1. Basic Setup (`01_basic_setup.tf`)
-**What it does:** Creates a simple user and space, then adds the user to the space.
+## Quick Start
 
-**Use case:** Getting started with the provider, learning the basics.
-
-**Key concepts:**
-- Creating a user
-- Creating a space
-- Adding users to spaces
-- Outputs
-
-**To run:**
 ```bash
-cd examples
+export ARIZE_API_KEY="your-api-key-here"
+
+cd examples/01_basic_setup
 terraform init
-terraform plan
-terraform apply
+terraform plan -var="user_email=alice@company.com"
+terraform apply -var="user_email=alice@company.com"
+```
+
+EU accounts: add `endpoint = "https://app.eu-west-1a.arize.com/graphql"` to the example's `provider "arize"` block.
+
+**Users and spaces:** Arize adds a user to a space only after they accept their invitation. Adding a user whose `arize_user` is still a pending invitation fails with "User hasn't accepted the invitation yet". The examples therefore add existing users to spaces, looked up with the `arize_users` data source, or (example 2) invite users first and add them to spaces on a later apply, once they have accepted.
+
+---
+
+### 1. Basic Setup (`01_basic_setup/`)
+**What it does:** Creates a space and adds an existing, active user to it as `member`.
+
+**Key concepts:**
+- Creating a space
+- Looking up a user by email with the `arize_users` data source
+- A `precondition` that fails clearly when no active user has that email
+
+**To run:**
+```bash
+cd 01_basic_setup
+terraform init
+terraform apply -var="user_email=alice@company.com"
 ```
 
 ---
 
-### 2. Team Management (`02_team_management.tf`)
-**What it does:** Manages a team with multiple members, different roles, and multiple spaces.
-
-**Use case:** Setting up a collaborative environment for your ML team with role-based access control.
+### 2. Team Management (`02_team_management/`)
+**What it does:** Invites a team (`arize_user`) and adds each member to spaces with their role.
 
 **Key concepts:**
-- Creating multiple users (using `for_each`)
-- Different space roles: admin, member, readOnly, annotator
-- Managing team access to multiple spaces
-- Using locals for team configuration
+- Creating multiple users with `for_each`
+- Space roles: `admin`, `member`, `readOnly`, `annotator`
+- Adding only users who have accepted their invitation; the `pending_invitations` output lists the rest. Rerun `terraform apply` after they accept.
+- Someone who already has an Arize account can't be invited again: import their `arize_user` instead
 
 **To run:**
 ```bash
-terraform plan -var-file=02_team_management.tfvars
-terraform apply -var-file=02_team_management.tfvars
+cd 02_team_management
+terraform init
+terraform apply      # sends the invitations
+terraform apply      # later: adds members who have accepted to the spaces
 ```
-
-**Key output:** Summary of all team members, their roles, and assigned spaces.
 
 ---
 
-### 3. CI/CD & Automation (`03_cicd_automation.tf`)
-**What it does:** Creates API keys for different services with appropriate permissions.
-
-**Use case:** Setting up service accounts for automated workflows (data pipelines, monitoring, exports).
+### 3. Datasets from CI (`03_datasets/`)
+**What it does:** Syncs the examples in `datasets/basic_quiz.csv` to an Arize dataset. Run it from CI on every merge.
 
 **Key concepts:**
-- Creating API keys with specific permissions
-- Managing sensitive outputs
-- Querying existing API keys
-- Identifying keys that need rotation
-- Integration with secret managers
+- `arize_dataset` with `key_column` and `examples` built from `csvdecode`
+- Changed rows are updated, new rows added, removed rows deleted, all in the latest dataset version
+- A sample GitHub Actions step (in the file's comments)
 
 **To run:**
 ```bash
-terraform plan
-terraform apply
+cd 03_datasets
+terraform init
+terraform apply -var="space_id=<space_id>"
 ```
-
-**Important:** The actual API keys are marked as sensitive. Capture them from the output and store in your secret manager (AWS Secrets Manager, HashiCorp Vault, etc.).
-
-**Key output:**
-- Service API keys (IDs only)
-- Keys that need rotation
-- All API keys in the account
 
 ---
 
-### 4. Multi-Environment Setup (`04_multi_environment.tf`)
-**What it does:** Manages development, staging, and production environments with consistent, environment-specific configuration.
-
-**Use case:** Managing Arize resources across multiple environments with different security levels and team sizes.
+### 4. Multi-Environment Setup (`04_multi_environment/`)
+**What it does:** Creates an environment's space (and a backup space for staging and prod) and adds existing users to it with an environment-specific role.
 
 **Key concepts:**
-- Environment-specific variables
-- Conditional resource creation
-- Safety checks (prevent accidental production changes)
-- Reusable configuration with locals
-- Remote state backend setup
+- Environment-specific settings in `locals`
+- Conditional resources (`count`)
+- A variable `validation` that refuses `environment=prod` unless `enable_production=true` (needs Terraform 1.9+)
+- One state per environment (workspaces or a backend key per environment)
 
 **To run:**
-
-Development:
 ```bash
-terraform plan -var="environment=dev"
+cd 04_multi_environment
+terraform init
 terraform apply -var="environment=dev"
+terraform apply -var="environment=staging" -var='team_emails=["alice@company.com"]'
+terraform apply -var="environment=prod" -var="enable_production=true"
 ```
 
-Staging:
-```bash
-terraform plan -var="environment=staging" -var="team_size=4"
-terraform apply -var="environment=staging" -var="team_size=4"
-```
-
-Production (requires explicit flag):
-```bash
-terraform plan -var="environment=prod" -var="enable_production_space=true"
-terraform apply -var="environment=prod" -var="enable_production_space=true"
-```
-
-**Key output:** Environment-specific information (space IDs, team members, service accounts).
+Or copy `prod.tfvars.example` (or `dev.tfvars.example`) to `prod.tfvars`, edit it, and run `terraform apply -var-file=prod.tfvars`. Keep `*.tfvars` out of git if they contain anything sensitive.
 
 ---
 
-### 5. Importing Existing Resources (`05_importing_existing_resources.tf`)
-**What it does:** Demonstrates how to import existing Arize resources into Terraform state and then manage them alongside new resources.
-
-**Use case:** Adopting Terraform for an account that already has Arize resources created manually.
+### 5. Importing Existing Resources (`05_importing_existing_resources/`)
+**What it does:** Lists existing users and roles, imports existing resources, and adds an existing user to a new space.
 
 **Key concepts:**
-- Using data sources to query existing resources
-- Filtering existing data
-- Importing resources into Terraform state
-- Managing mix of imported and new resources
+- Data sources (`arize_users`, `arize_roles`) and filtering their results
+- Import IDs for every resource
+- `import` blocks (Terraform 1.5+)
 
 **To run:**
-
-First, list existing resources:
 ```bash
-terraform plan
-```
+cd 05_importing_existing_resources
+terraform init
 
-Then import specific resources:
-```bash
-# Import a user
-terraform import arize_user.imported_user "user-id-from-arize"
+terraform import arize_user.imported_user "<user_id>"
+terraform import arize_space.imported_space "<space_id>"
+terraform import arize_space_member.imported_member "<space_id>:<user_id>"
 
-# Import a space
-terraform import arize_space.imported_space "space-id-from-arize"
-```
-
-Finally, add configuration and manage:
-```bash
-terraform plan  # Should show no changes for imported resources
+terraform plan   # should show no changes for the imported resources
 terraform apply
 ```
 
-**Key output:** Analysis of existing users, spaces, and API keys.
-
 ---
 
-### 6. SAML/SSO Setup (`06_saml_sso_setup.tf`)
-**What it does:** Configures SAML Identity Provider and sets up automatic user provisioning with role mappings.
-
-**Use case:** Enterprise organizations using Okta, Azure AD, Google Workspace, or other SAML providers for centralized identity management.
+### 6. SAML/SSO Setup (`06_saml_sso_setup/`)
+**What it does:** Configures a SAML IdP whose role mappings put IdP groups into spaces with built-in roles. Users are created on their first SAML login, so no `arize_user` resources are needed.
 
 **Key concepts:**
-- Configuring SAML metadata URL or raw XML
-- Setting allowed email domains
-- Mapping IdP groups to org and space roles with `role_mappings`
-- Optional default roles for users matching no mapping
+- `metadata_url` or `metadata_xml`
+- `email_domains_list`
+- `role_mappings` to org and space roles; optional `default_*` roles for users matching no mapping
 - Why `terraform destroy` leaves the IdP in Arize
 
 **To run:**
 ```bash
-terraform plan -var="org_id=<org_id>"
+cd 06_saml_sso_setup
+terraform init
 terraform apply -var="org_id=<org_id>"
 ```
 
-**Key output:** SAML IdP ID and space IDs for team collaboration
-
 ---
 
-### 7. SAML with Custom Roles (`07_saml_custom_roles.tf`)
-**What it does:** Combines custom roles with SAML IdP configuration to implement fine-grained permission control.
-
-**Use case:** Organizations that need custom permission sets beyond the default roles (admin, member, readOnly, annotator).
+### 7. SAML with Custom Roles (`07_saml_custom_roles/`)
+**What it does:** Creates custom roles with `arize_role` and grants them per space to IdP groups.
 
 **Key concepts:**
-- Creating custom roles and permissions with `arize_role`
-- Granting custom roles per space to IdP groups (`space_custom_roles`)
-- Combining built-in organization roles with custom space roles
-- Multi-team setup with different custom roles
+- Custom roles and permissions
+- `space_custom_roles` in `role_mappings`
+- Built-in organization roles combined with custom space roles
 
 **To run:**
 ```bash
-terraform plan -var="org_id=<org_id>"
+cd 07_saml_custom_roles
+terraform init
 terraform apply -var="org_id=<org_id>"
 ```
 
-**Key output:** Custom role IDs and team structure with role assignments
-
 ---
 
-### 8. Using Existing Roles (`08_using_existing_roles.tf`)
-**What it does:** Queries and references roles created in the Arize UI without needing to create them via Terraform.
-
-**Use case:** Working with custom roles that were already created in Arize's web interface.
+### 8. Using Existing Roles (`08_using_existing_roles/`)
+**What it does:** Reads roles created in the Arize UI and references one by name in a SAML role mapping.
 
 **Key concepts:**
-- Using the `arize_roles` data source to read all roles
-- Creating a local map of role names to IDs
+- The `arize_roles` data source and a name-to-ID map
+- `lookup(..., null)` with a `precondition`, so a missing role fails with a clear message
 - Filtering roles by permission or `is_predefined`
-- Referencing roles by name in SAML and space assignments
-- Best practices for role lookups
 
 **To run:**
 ```bash
-terraform plan -var="org_id=<org_id>"
-terraform apply -var="org_id=<org_id>"
+cd 08_using_existing_roles
+terraform init
+terraform apply -var="org_id=<org_id>" -var="data_scientist_role_name=data-scientist"
 ```
-
-**Key output:** All available roles and their IDs, roles map for easy reference
 
 ---
 
-### 9. Evaluators (`09_evaluators.tf`)
-**What it does:** Creates LLM-as-judge and Python code evaluators, and lists evaluators already in the space.
-
-**Use case:** Keeping evaluation criteria in version control next to the application they score.
+### 9. Evaluators (`09_evaluators/`)
+**What it does:** Creates LLM-as-judge and Python code evaluators and lists the evaluators already in the space.
 
 **Key concepts:**
-- `template` evaluators with classification choices and an optional judge model
+- `template` evaluators with classification choices and a judge model (`llm.integration_name` or `llm.integration_id`)
 - `code` evaluators (Arize derives `span_attributes` from the `evaluate()` signature)
 - Span, trace, or session granularity
 - Config changes publish new evaluator versions with a commit message
@@ -225,181 +193,42 @@ terraform apply -var="org_id=<org_id>"
 
 **To run:**
 ```bash
-terraform plan -var="space_id=<space_id>" -var="llm_integration_id=<integration_id>"
-terraform apply -var="space_id=<space_id>" -var="llm_integration_id=<integration_id>"
+cd 09_evaluators
+terraform init
+terraform apply -var="space_id=<space_id>" -var="llm_integration_name=<integration name>"
 ```
-
-**Key output:** Evaluator IDs by name, current version number, derived span attributes
-
----
-
-## Quick Start
-
-1. **Set up your Arize API key:**
-   ```bash
-   export ARIZE_API_KEY="your-api-key-here"
-   ```
-
-2. **Choose an example to run:**
-   ```bash
-   cd examples
-   terraform init
-   ```
-
-3. **Preview the changes:**
-   ```bash
-   terraform plan
-   ```
-
-4. **Apply the configuration:**
-   ```bash
-   terraform apply
-   ```
-
----
-
-## Common Workflows
-
-### Add a team member to production space
-
-Edit `02_team_management.tf` and add to the `team` local:
-```hcl
-locals {
-  team = {
-    # ... existing members ...
-    new_person = {
-      email = "newperson@company.com"
-      name  = "New Person"
-      role  = "member"
-    }
-  }
-}
-```
-
-Then apply:
-```bash
-terraform apply
-```
-
-### Rotate API keys
-
-1. Create a new API key in `03_cicd_automation.tf`
-2. Capture the new key from outputs
-3. Update your services with the new key
-4. Delete the old key resource from config
-5. Run `terraform apply`
-
-### Move a user between spaces
-
-Edit space member roles or use `terraform state mv` to reorganize.
 
 ---
 
 ## Debugging
 
-### View Terraform state for a resource
-
 ```bash
-terraform state show arize_user.example
+terraform state list                     # resources in state
+terraform state show arize_space.main    # one resource
+terraform plan -out=plan.tfplan && terraform show plan.tfplan
+TF_LOG=DEBUG terraform plan              # provider debug logging
+terraform validate && terraform fmt -check
 ```
-
-### List all resources in state
-
-```bash
-terraform state list
-```
-
-### See detailed output
-
-```bash
-terraform plan -var-file=01_basic_setup.tfvars -out=plan.tfplan
-terraform show plan.tfplan
-```
-
-### Enable debug logging
-
-```bash
-TF_LOG=DEBUG terraform plan
-```
-
----
 
 ## Cleanup
-
-Remove resources created by an example:
 
 ```bash
 terraform destroy
 ```
 
-Or remove specific resources:
-
-```bash
-terraform destroy -target=arize_user.example_user
-```
-
----
-
-## Next Steps
-
-- Read the [comprehensive guide](../docs/GUIDE.md) for more advanced patterns
-- Check [CLAUDE.md](../CLAUDE.md) for architecture details
-- Review the provider [README](../README.md) for complete resource documentation
-- Explore [Terraform best practices](https://www.terraform.io/docs/cloud/guides/recommended-practices)
-
----
-
-## Tips & Tricks
-
-### Use tfvars files for reusable configurations
-
-Create `prod.tfvars`:
-```hcl
-environment = "prod"
-team_size = 5
-enable_production_space = true
-```
-
-Then apply with:
-```bash
-terraform apply -var-file=prod.tfvars
-```
-
-### Store API keys securely
-
-Never commit actual API keys. Use:
-```bash
-terraform output api_keys_secret_export | jq . | \
-  aws secretsmanager create-secret --name arize/prod/api-keys --secret-string file:///dev/stdin
-```
-
-### Export Terraform state for backup
-
-```bash
-terraform state pull > terraform.tfstate.backup
-```
-
-### Validate configuration before applying
-
-```bash
-terraform validate
-terraform fmt -check
-```
-
----
+Destroying an `arize_user` deactivates the user in Arize (or cancels a pending invitation). Destroying an `arize_saml_idp` only removes it from state.
 
 ## Troubleshooting
 
-**"Space already exists in account"**
-- Use a unique space name or import the existing space
+**"User hasn't accepted the invitation yet"**
+- Arize adds users to spaces only after they accept. Wait for them to accept, then run `terraform apply` again.
 
-**"User not found" when importing**
-- Verify the user ID is correct
-- Check that the user exists in your Arize account
+**"Not Authorized" when creating a space**
+- The API key's user can't create spaces in that organization. The error lists the user's role in each organization; account admins and organization `admin` or `member` users can create spaces.
 
-**"API key is sensitive - cannot output"**
-- The key is hidden for security. Capture it from the Terraform output immediately after creation.
+**401 Unauthorized**
+- Check `ARIZE_API_KEY`. EU accounts must also set `endpoint = "https://app.eu-west-1a.arize.com/graphql"`.
 
 ---
 
-For more help, see the [comprehensive guide](../docs/GUIDE.md) or [CLAUDE.md](../CLAUDE.md).
+For more, see the [comprehensive guide](../docs/GUIDE.md) and the provider [README](../README.md).

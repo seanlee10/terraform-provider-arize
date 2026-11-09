@@ -2,7 +2,7 @@
 
 [![GitHub release](https://img.shields.io/github/v/release/seanlee10/terraform-provider-arize?style=flat-square)](https://github.com/seanlee10/terraform-provider-arize/releases)
 
-Manage your Arize account infrastructure as code with Terraform. Create and manage users, spaces, API keys, evaluators, datasets, SAML/SSO configuration, and team access with full GitOps support.
+Manage your Arize account infrastructure as code with Terraform. Create and manage users, spaces, custom roles, evaluators, datasets, SAML/SSO configuration, and team access with full GitOps support.
 
 ## Features
 
@@ -13,7 +13,6 @@ Manage your Arize account infrastructure as code with Terraform. Create and mana
 ✅ **SAML/SSO** - Configure SAML identity providers and role mappings for enterprise SSO  
 ✅ **Evaluators** - Version LLM-as-judge and Python code evaluators alongside your app  
 ✅ **Datasets** - Keep dataset examples in a CSV and sync them to Arize on every apply  
-✅ **API Keys** - Generate and manage service account keys for automation  
 ✅ **Multi-Environment** - Deploy to dev, staging, and production with safety checks  
 ✅ **Import Existing** - Adopt Terraform for existing Arize infrastructure  
 ✅ **Data Sources** - Query and reference existing resources in your config  
@@ -31,7 +30,7 @@ terraform {
   required_providers {
     arize = {
       source  = "seanlee10/arize"
-      version = "~> 0.2"
+      version = "~> 0.3.6"
     }
   }
 }
@@ -40,12 +39,20 @@ provider "arize" {
   # API key from ARIZE_API_KEY environment variable
   # or set explicitly:
   # api_key = var.arize_api_key
+
+  # EU accounts (see "EU Accounts" below):
+  # endpoint = "https://app.eu-west-1a.arize.com/graphql"
 }
 
-# Create a user
-resource "arize_user" "alice" {
-  email = "alice@company.com"
-  name  = "Alice Johnson"
+# Look up an existing user. Arize can add users to spaces only after they
+# accept their invitation, so add people who already have an account.
+data "arize_users" "all" {}
+
+locals {
+  user_ids = {
+    for user in data.arize_users.all.users : lower(user.email) => user.id
+    if user.status == "active"
+  }
 }
 
 # Create a space
@@ -56,14 +63,21 @@ resource "arize_space" "ml_models" {
   # Optional: defaults to the account's first organization. Set
   # organization_name (as shown in Arize) or organization_id (the segment
   # after /organizations/ in the Arize UI URL, or from `ax organizations list`).
-  organization_name = "Experimentation"
+  # organization_name = "Experimentation"
 }
 
-# Add user to space
+# Add the user to the space
 resource "arize_space_member" "alice_access" {
   space_id = arize_space.ml_models.id
-  user_id  = arize_user.alice.id
+  user_id  = lookup(local.user_ids, "alice@company.com", null)
   role     = "member"
+
+  lifecycle {
+    precondition {
+      condition     = contains(keys(local.user_ids), "alice@company.com")
+      error_message = "alice@company.com isn't an active Arize user yet."
+    }
+  }
 }
 ```
 
@@ -82,7 +96,6 @@ terraform apply
 |----------|-------------|
 | `arize_user` | Invite and manage users in your Arize account |
 | `arize_role` | Manage custom roles and their permissions |
-| `arize_api_key` | Create and manage API keys for automation |
 | `arize_space` | Create and manage ML monitoring spaces |
 | `arize_space_member` | Add users to spaces with role-based access |
 | `arize_saml_idp` | Configure SAML identity provider for enterprise SSO |
@@ -95,12 +108,13 @@ terraform apply
 |-------------|-------------|
 | `arize_users` | Query all users in your account |
 | `arize_roles` | Query all predefined and custom roles (including ones created in UI) |
-| `arize_api_keys` | Query all API keys in your account |
 | `arize_evaluators` | List evaluators in a space (including ones created in UI) |
+
+API keys aren't managed by this provider yet; use the Arize UI or `ax api-keys`.
 
 ## Users
 
-Creating an `arize_user` sends an email invitation with the Member account role. Until it's accepted, the user has status `invited` and can't be added to spaces, so `arize_space_member` resources for it fail until then. After acceptance, the next plan picks up the user's new ID and the name they entered at signup.
+Creating an `arize_user` sends an email invitation with the Member account role. Until it's accepted, the user has status `invited` and can't be added to spaces: an `arize_space_member` for it fails with "User hasn't accepted the invitation yet", so run `terraform apply` again after they accept. After acceptance, the next plan picks up the user's new ID and the name they entered at signup. [Example 2](examples/02_team_management/) invites a team and adds members to spaces only once they're active.
 
 **Destroying an `arize_user` deactivates the user in Arize**, removing their access. Destroying one that is still invited cancels the invitation.
 
@@ -115,7 +129,7 @@ When adding users to spaces, choose from:
 - **`readOnly`** - Can view content but cannot edit
 - **`annotator`** - Can provide annotations and feedback
 
-Removing an `arize_space_member` removes the user from the space. Arize doesn't allow changing an existing member's role to `annotator`; to make someone an annotator, remove the membership and add it again with that role.
+`role` must be one of these (case-sensitive). Removing an `arize_space_member` removes the user from the space. The `annotator` role follows the user's account role: users with the Annotator account role can only be annotators in spaces, and other users can't be annotators.
 
 ## SAML/SSO Configuration
 
@@ -163,7 +177,7 @@ Org and space roles in `role_mappings` and the `default_*` settings are built-in
 - Role-based access control managed by Terraform
 - Single source of truth for team structure
 
-See [SAML SSO example](examples/06_saml_sso_setup.tf) for complete setup.
+See [SAML SSO example](examples/06_saml_sso_setup/) for complete setup.
 
 ## Working with Custom Roles
 
@@ -227,7 +241,7 @@ resource "arize_saml_idp" "sso" {
 
 Each role in `data.arize_roles.all.roles` has `id`, `name`, `description`, `permissions`, and `is_predefined`.
 
-See [SAML with Custom Roles](examples/07_saml_custom_roles.tf) and [Using Existing Roles](examples/08_using_existing_roles.tf) for more patterns.
+See [SAML with Custom Roles](examples/07_saml_custom_roles/) and [Using Existing Roles](examples/08_using_existing_roles/) for more patterns.
 
 ## Evaluators
 
@@ -282,7 +296,7 @@ resource "arize_evaluator" "non_empty" {
 - Arize normalizes `llm.invocation_parameters` / `provider_parameters` per provider, so edits made outside Terraform aren't detected
 - Harness, remote, and System One evaluator types aren't supported yet
 
-See [Evaluators example](examples/09_evaluators.tf) for both evaluator types and the data source.
+See [Evaluators example](examples/09_evaluators/) for both evaluator types and the data source.
 
 ## Datasets
 
@@ -330,8 +344,8 @@ terraform import arize_user.alice "<user_id or pending invitation_id>"
 # Import a space
 terraform import arize_space.prod "<space_id>"
 
-# Import an API key
-terraform import arize_api_key.service "<api_key_id>"
+# Import a space membership (space ID : user ID)
+terraform import arize_space_member.alice_access "<space_id>:<user_id>"
 
 # Import a custom role
 terraform import arize_role.data_scientist "<role_id>"
@@ -341,6 +355,9 @@ terraform import arize_evaluator.correctness "<space_id>/<evaluator_id>"
 
 # Import a dataset (dataset ID : key column)
 terraform import arize_dataset.basic_quiz "<dataset_id>:question"
+
+# Import a SAML IdP
+terraform import arize_saml_idp.company_saml "<idp_id>"
 ```
 
 Then create matching Terraform configuration for the imported resource.
@@ -352,17 +369,17 @@ Then create matching Terraform configuration for the imported resource.
 - **[Architecture Guide](CLAUDE.md)** - Technical architecture, development workflow, and code patterns
 
 ### 📝 Examples
-Browse practical, ready-to-use examples in the [examples/](examples/) directory:
+Browse practical, ready-to-use examples in the [examples/](examples/) directory. Each is a self-contained configuration in its own directory:
 
-1. **[Basic Setup](examples/01_basic_setup.tf)** - Simple user + space starter example
-2. **[Team Management](examples/02_team_management.tf)** - Multi-user team with different roles
-3. **[CI/CD Automation](examples/03_cicd_automation.tf)** - API keys and service accounts for automation
-4. **[Multi-Environment](examples/04_multi_environment.tf)** - Dev/staging/prod with safety checks
-5. **[Importing Resources](examples/05_importing_existing_resources.tf)** - Migrate existing infrastructure to Terraform
-6. **[SAML/SSO Setup](examples/06_saml_sso_setup.tf)** - Enterprise SSO with role mapping and team provisioning
-7. **[SAML with Custom Roles](examples/07_saml_custom_roles.tf)** - Fine-grained permission control with custom roles
-8. **[Using Existing Roles](examples/08_using_existing_roles.tf)** - Query and reference roles created in Arize UI
-9. **[Evaluators](examples/09_evaluators.tf)** - LLM-as-judge and code evaluators with versioning
+1. **[Basic Setup](examples/01_basic_setup/)** - A space and an existing user added to it
+2. **[Team Management](examples/02_team_management/)** - Invite a team and give members space roles
+3. **[Datasets from CI](examples/03_datasets/)** - Sync a dataset from a CSV file on every apply
+4. **[Multi-Environment](examples/04_multi_environment/)** - Dev/staging/prod with a production safety check
+5. **[Importing Resources](examples/05_importing_existing_resources/)** - Migrate existing infrastructure to Terraform
+6. **[SAML/SSO Setup](examples/06_saml_sso_setup/)** - Enterprise SSO with role mapping and team provisioning
+7. **[SAML with Custom Roles](examples/07_saml_custom_roles/)** - Fine-grained permission control with custom roles
+8. **[Using Existing Roles](examples/08_using_existing_roles/)** - Query and reference roles created in Arize UI
+9. **[Evaluators](examples/09_evaluators/)** - LLM-as-judge and code evaluators with versioning
 
 See [examples/README.md](examples/README.md) for a detailed guide to each example.
 
@@ -409,25 +426,17 @@ See [CLAUDE.md](CLAUDE.md) for:
 
 ### Onboard a New Team Member
 
-```bash
-terraform apply -target=arize_user.new_member -target=arize_space_member.new_access
-```
-
-### Rotate API Keys
-
-```bash
-# Create new key, update services, then destroy old key
-terraform destroy -target=arize_api_key.old_key
-```
+1. Add an `arize_user` and `terraform apply`: Arize emails an invitation.
+2. After they accept, add their `arize_space_member` resources (or let them be added automatically, as in [example 2](examples/02_team_management/)) and `terraform apply` again.
 
 ### Create Multiple Environments
 
-Use the [multi-environment example](examples/04_multi_environment.tf):
+Use the [multi-environment example](examples/04_multi_environment/), with one state per environment:
 
 ```bash
 terraform apply -var="environment=dev"
 terraform apply -var="environment=staging"
-terraform apply -var="environment=prod" -var="enable_production_space=true"
+terraform apply -var="environment=prod" -var="enable_production=true"
 ```
 
 ## Configuration Reference
@@ -436,17 +445,35 @@ terraform apply -var="environment=prod" -var="enable_production_space=true"
 
 ```hcl
 provider "arize" {
-  # API key for authentication
-  # Optional: defaults to ARIZE_API_KEY environment variable
+  # API key for authentication (surrounding whitespace is trimmed)
+  # Optional: defaults to the ARIZE_API_KEY environment variable
   api_key = var.arize_api_key
 
   # GraphQL endpoint
   # Optional: defaults to https://app.arize.com/graphql
   endpoint = "https://app.arize.com/graphql"
 
-  # REST API base URL (used for custom roles and datasets)
-  # Optional: defaults to https://api.arize.com
+  # REST API base URL, used for users, roles, datasets, space updates and
+  # deletes, and integration names
+  # Optional: defaults to the REST API of the endpoint's cluster
   rest_endpoint = "https://api.arize.com"
+}
+```
+
+| Argument | Default | Used for |
+|----------|---------|----------|
+| `api_key` | `ARIZE_API_KEY` environment variable | Authentication (sensitive; surrounding whitespace is trimmed) |
+| `endpoint` | `https://app.arize.com/graphql` | GraphQL API: spaces, space members, SAML IdPs, evaluators, user types |
+| `rest_endpoint` | The REST API of `endpoint`'s cluster: `app.<region>.arize.com/graphql` → `https://api.<region>.arize.com`; otherwise `https://api.arize.com` | REST API: users, roles, datasets, space updates and deletes, integration names |
+
+### EU Accounts
+
+API keys work only on their own cluster. EU accounts set only the EU endpoint; `rest_endpoint` follows it:
+
+```hcl
+provider "arize" {
+  endpoint = "https://app.eu-west-1a.arize.com/graphql"
+  # rest_endpoint defaults to https://api.eu-west-1a.arize.com
 }
 ```
 

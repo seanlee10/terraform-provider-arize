@@ -2,7 +2,10 @@ package provider
 
 import (
 	"context"
+	"fmt"
+	"net/url"
 	"os"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -48,11 +51,11 @@ func (p *ArizeProvider) Schema(ctx context.Context, req provider.SchemaRequest, 
 				Sensitive:           true,
 			},
 			"endpoint": schema.StringAttribute{
-				MarkdownDescription: "Arize GraphQL endpoint. Defaults to https://app.arize.com/graphql.",
+				MarkdownDescription: "Arize GraphQL endpoint. Defaults to https://app.arize.com/graphql. EU accounts use https://app.eu-west-1a.arize.com/graphql.",
 				Optional:            true,
 			},
 			"rest_endpoint": schema.StringAttribute{
-				MarkdownDescription: "Arize REST API base URL, used for custom roles. Defaults to https://api.arize.com.",
+				MarkdownDescription: "Arize REST API base URL, used for users, roles, datasets, space updates and deletes, and integration names. Defaults to the REST API of the endpoint's region (https://api.eu-west-1a.arize.com for https://app.eu-west-1a.arize.com/graphql), or https://api.arize.com.",
 				Optional:            true,
 			},
 		},
@@ -66,15 +69,29 @@ func (p *ArizeProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		return
 	}
 
-	// Use environment variable if not set in config
-	if config.APIKey.IsNull() {
-		apiKey := os.Getenv("ARIZE_API_KEY")
-		if apiKey != "" {
-			config.APIKey = types.StringValue(apiKey)
+	for _, a := range []struct {
+		name  string
+		value types.String
+	}{{"api_key", config.APIKey}, {"endpoint", config.Endpoint}, {"rest_endpoint", config.RESTEndpoint}} {
+		if a.value.IsUnknown() {
+			resp.Diagnostics.AddAttributeError(path.Root(a.name), "Unknown provider "+a.name,
+				fmt.Sprintf("The provider's %s depends on a value that isn't known until apply. "+
+					"Set it to a known value (a variable or the ARIZE_API_KEY environment variable), "+
+					"or apply the resource it depends on first with -target.", a.name))
 		}
 	}
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
-	if !config.APIKey.IsUnknown() && config.APIKey.ValueString() == "" {
+	// Use environment variable if not set in config
+	if config.APIKey.IsNull() {
+		config.APIKey = types.StringValue(os.Getenv("ARIZE_API_KEY"))
+	}
+	// A key read from a file often ends in a newline, which can't be sent
+	// in a header.
+	config.APIKey = types.StringValue(strings.TrimSpace(config.APIKey.ValueString()))
+	if config.APIKey.ValueString() == "" {
 		resp.Diagnostics.AddAttributeError(
 			path.Root("api_key"),
 			"Missing Arize API key",
@@ -83,12 +100,18 @@ func (p *ArizeProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		return
 	}
 
-	// Set default endpoint
 	if config.Endpoint.IsNull() {
-		config.Endpoint = types.StringValue("https://app.arize.com/graphql")
+		config.Endpoint = types.StringValue(defaultEndpoint)
 	}
 	if config.RESTEndpoint.IsNull() {
-		config.RESTEndpoint = types.StringValue("https://api.arize.com")
+		rest, ok := restEndpointFor(config.Endpoint.ValueString())
+		if !ok {
+			resp.Diagnostics.AddAttributeWarning(path.Root("rest_endpoint"), "rest_endpoint not set",
+				fmt.Sprintf("Couldn't work out the REST API URL from endpoint %q, so %s is used. "+
+					"Set rest_endpoint if your account is on another cluster; otherwise users, roles, "+
+					"datasets and space updates fail with HTTP 401.", config.Endpoint.ValueString(), rest))
+		}
+		config.RESTEndpoint = types.StringValue(rest)
 	}
 
 	// Store config for resources to use
@@ -100,7 +123,6 @@ func (p *ArizeProvider) Resources(ctx context.Context) []func() resource.Resourc
 	return []func() resource.Resource{
 		NewUserResource,
 		NewRoleResource,
-		NewAPIKeyResource,
 		NewSpaceResource,
 		NewSpaceMemberResource,
 		NewSAMLIdPResource,
@@ -113,7 +135,28 @@ func (p *ArizeProvider) DataSources(ctx context.Context) []func() datasource.Dat
 	return []func() datasource.DataSource{
 		NewUsersDataSource,
 		NewRolesDataSource,
-		NewAPIKeysDataSource,
 		NewEvaluatorsDataSource,
 	}
+}
+
+const (
+	defaultEndpoint     = "https://app.arize.com/graphql"
+	defaultRESTEndpoint = "https://api.arize.com"
+)
+
+// restEndpointFor returns the REST API URL on the same cluster as the
+// GraphQL endpoint: https://app.<region>.arize.com/graphql becomes
+// https://api.<region>.arize.com. Keys only work on their own cluster, so
+// sending REST calls to the default (US) cluster fails with 401 for EU
+// accounts. ok is false if the endpoint isn't in that form.
+func restEndpointFor(endpoint string) (string, bool) {
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Host == "" {
+		return defaultRESTEndpoint, false
+	}
+	rest, found := strings.CutPrefix(u.Host, "app.")
+	if !found {
+		return defaultRESTEndpoint, false
+	}
+	return u.Scheme + "://api." + rest, true
 }

@@ -8,19 +8,3 @@ type User struct {
 	UserType  string `json:"userType"`
 	CreatedAt string `json:"createdAt"`
 }
-
-type APIKey struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Key         string   `json:"key,omitempty"`
-	Permissions []string `json:"permissions"`
-	LastUsedAt  string   `json:"lastUsedAt,omitempty"`
-	CreatedAt   string   `json:"createdAt"`
-	ExpiresAt   string   `json:"expiresAt,omitempty"`
-}
-
-type CreateAPIKeyInput struct {
-	Name        string   `json:"name"`
-	Permissions []string `json:"permissions,omitempty"`
-	ExpiresAt   string   `json:"expiresAt,omitempty"`
-}

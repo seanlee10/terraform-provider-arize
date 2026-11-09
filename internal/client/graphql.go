@@ -7,7 +7,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
+
+// requestTimeout bounds every API call, so a stalled connection fails
+// instead of hanging the run.
+const requestTimeout = 2 * time.Minute
+
+// unauthorizedHint explains a 401: keys only work on their own cluster.
+const unauthorizedHint = "check the provider api_key or ARIZE_API_KEY. " +
+	"Keys only work on their own cluster: EU accounts need " +
+	"endpoint = \"https://app.eu-west-1a.arize.com/graphql\""
 
 type Client struct {
 	httpClient *http.Client
@@ -17,6 +27,7 @@ type Client struct {
 
 func New(endpoint, apiKey string) *Client {
 	httpClient := &http.Client{
+		Timeout: requestTimeout,
 		Transport: &authTransport{
 			apiKey:    apiKey,
 			roundTrip: http.DefaultTransport,
@@ -97,7 +108,7 @@ func (c *Client) execute(ctx context.Context, query string, variables map[string
 
 	// Auth failures come back as plain text ("Unauthorized"), not GraphQL JSON.
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return fmt.Errorf("Arize rejected the API key (HTTP %d): check the provider api_key or ARIZE_API_KEY", resp.StatusCode)
+		return fmt.Errorf("Arize rejected the API key (HTTP %d) at %s: %s", resp.StatusCode, c.endpoint, unauthorizedHint)
 	}
 	if resp.StatusCode >= 400 && !json.Valid(respBody) {
 		return fmt.Errorf("GraphQL request failed (HTTP %d): %s", resp.StatusCode, bytes.TrimSpace(respBody))
@@ -111,13 +122,19 @@ func (c *Client) execute(ctx context.Context, query string, variables map[string
 	if len(gqlResp.Errors) > 0 {
 		return fmt.Errorf("GraphQL error: %w", &gqlResp.Errors[0])
 	}
-
-	if err := json.Unmarshal(respBody, &gqlResp); err == nil {
-		resultBytes, _ := json.Marshal(gqlResp.Data)
-		if err := json.Unmarshal(resultBytes, result); err != nil {
-			return fmt.Errorf("failed to parse GraphQL data: %w", err)
-		}
+	// An error status with a JSON body that isn't a GraphQL error (from a
+	// gateway, say) must not read as an empty result: Read would take that
+	// as "deleted" and drop the resource from state.
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("GraphQL request failed (HTTP %d): %s", resp.StatusCode, bytes.TrimSpace(respBody))
 	}
 
+	resultBytes, err := json.Marshal(gqlResp.Data)
+	if err != nil {
+		return fmt.Errorf("failed to parse GraphQL data: %w", err)
+	}
+	if err := json.Unmarshal(resultBytes, result); err != nil {
+		return fmt.Errorf("failed to parse GraphQL data: %w", err)
+	}
 	return nil
 }

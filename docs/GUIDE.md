@@ -7,9 +7,12 @@ This guide demonstrates practical examples and use cases for managing your Arize
 1. [Getting Started](#getting-started)
 2. [User Management](#user-management)
 3. [Space Management](#space-management)
-4. [API Keys & Automation](#api-keys--automation)
-5. [Advanced Patterns](#advanced-patterns)
-6. [Best Practices](#best-practices)
+4. [Advanced Patterns](#advanced-patterns)
+5. [Best Practices](#best-practices)
+6. [Common Workflows](#common-workflows)
+7. [Troubleshooting](#troubleshooting)
+
+API keys aren't managed by this provider yet; use the Arize UI or `ax api-keys`.
 
 ---
 
@@ -22,7 +25,7 @@ terraform {
   required_providers {
     arize = {
       source  = "seanlee10/arize"
-      version = "~> 0.0.1"
+      version = "~> 0.3.6"
     }
   }
 }
@@ -31,9 +34,11 @@ provider "arize" {
   # API key from ARIZE_API_KEY environment variable
   # or set explicitly (not recommended for production):
   # api_key  = var.arize_api_key
-  
-  # Optional: custom endpoint for self-hosted instances
-  # endpoint = "https://arize-app.my-domain.com/graphql"
+
+  # EU accounts: set the EU GraphQL endpoint. rest_endpoint (users, roles,
+  # datasets, space updates and deletes, integration names) defaults to the
+  # same cluster's REST API, https://api.eu-west-1a.arize.com.
+  # endpoint = "https://app.eu-west-1a.arize.com/graphql"
 }
 ```
 
@@ -66,10 +71,12 @@ resource "arize_user" "data_scientist" {
 }
 
 output "user_id" {
-  value = arize_user.data_scientist.id
-  description = "ID of the created user"
+  value       = arize_user.data_scientist.id
+  description = "ID of the user (an invitation ID until the invitation is accepted)"
 }
 ```
+
+Creating an `arize_user` sends an email invitation. Until it's accepted, the user's `status` is `invited` and the user can't be added to spaces. After acceptance, the next plan picks up the user's new ID.
 
 ### Creating Multiple Users
 
@@ -98,23 +105,21 @@ output "team_user_ids" {
 
 ### Importing Existing Users
 
-```bash
-# First, find the user ID from Arize
-# Then import it into Terraform
-
-terraform import arize_user.existing_user "<user_id>"
-```
-
-Then reference it in your config:
+Write the configuration for the user:
 
 ```hcl
 resource "arize_user" "existing_user" {
   email = "existing@company.com"
   name  = "Existing User"
 }
+```
 
-# Now Terraform will manage this user
+Then import it by user ID or pending invitation ID (the `arize_users` data source lists user IDs) and check the result:
+
+```bash
+terraform import arize_user.existing_user "<user_id>"
 terraform state show arize_user.existing_user
+terraform plan   # should show no changes
 ```
 
 ### Querying All Users in Account
@@ -201,157 +206,53 @@ output "space_ids" {
 
 ### Adding Users to Spaces
 
+Arize adds a user to a space only after they accept their invitation; adding a pending invitation fails with "User hasn't accepted the invitation yet". So add existing users, looked up by email:
+
 ```hcl
-# Create a space
 resource "arize_space" "ml_team" {
   name    = "ml-team-collaboration"
   private = false
 }
 
-# Create team members
-resource "arize_user" "alice" {
-  email = "alice@company.com"
-  name  = "Alice"
-}
+data "arize_users" "all" {}
 
-resource "arize_user" "bob" {
-  email = "bob@company.com"
-  name  = "Bob"
+locals {
+  user_ids = {
+    for user in data.arize_users.all.users : lower(user.email) => user.id
+    if user.status == "active"
+  }
 }
 
 # Add users to the space with different roles
 resource "arize_space_member" "alice_admin" {
   space_id = arize_space.ml_team.id
-  user_id  = arize_user.alice.id
-  role     = "admin"  # Can manage space and add members
+  user_id  = local.user_ids["alice@company.com"]
+  role     = "admin" # Can manage space and add members
 }
 
 resource "arize_space_member" "bob_member" {
   space_id = arize_space.ml_team.id
-  user_id  = arize_user.bob.id
-  role     = "member"  # Can view and edit models
+  user_id  = local.user_ids["bob@company.com"]
+  role     = "member" # Can view and edit models
 }
 ```
+
+Indexing `local.user_ids[...]` fails at plan time when the email isn't an active user; use `lookup(local.user_ids, email, null)` with a `precondition` for a clearer message (see [example 1](../examples/01_basic_setup/)). To invite users and add them once they accept, see [example 2](../examples/02_team_management/).
+
+To manage a membership that already exists, import it with `terraform import arize_space_member.alice_admin "<space_id>:<user_id>"`.
 
 ### Space Roles Explained
 
-```hcl
-# admin - Can manage space, add/remove members, configure settings
-resource "arize_space_member" "admin_user" {
-  space_id = arize_space.shared.id
-  user_id  = arize_user.manager.id
-  role     = "admin"
-}
+`role` must be one of these case-sensitive values:
 
-# member - Can view all content and edit models
-resource "arize_space_member" "editor_user" {
-  space_id = arize_space.shared.id
-  user_id  = arize_user.engineer.id
-  role     = "member"
-}
+| Role | Access |
+|------|--------|
+| `admin` | Manage the space, add/remove members, configure settings |
+| `member` | View all content and edit |
+| `readOnly` | View content but not edit |
+| `annotator` | Provide annotations and feedback |
 
-# readOnly - Can view content but cannot edit
-resource "arize_space_member" "viewer_user" {
-  space_id = arize_space.shared.id
-  user_id  = arize_user.stakeholder.id
-  role     = "readOnly"
-}
-
-# annotator - Can provide annotations/feedback on predictions
-resource "arize_space_member" "labeler_user" {
-  space_id = arize_space.shared.id
-  user_id  = arize_user.labeler.id
-  role     = "annotator"
-}
-```
-
----
-
-## API Keys & Automation
-
-### Creating an API Key for CI/CD
-
-```hcl
-resource "arize_api_key" "deployment_pipeline" {
-  name        = "deployment-pipeline-api-key"
-  permissions = [
-    "api:read",
-    "api:write"
-  ]
-  expires_at = "2027-12-31T23:59:59Z"  # Optional expiration
-}
-
-# Output the key (only available at creation!)
-output "deployment_api_key" {
-  value       = arize_api_key.deployment_pipeline.key
-  sensitive   = true
-  description = "Store this in your CI/CD secret manager"
-}
-```
-
-### Creating Multiple API Keys for Different Services
-
-```hcl
-locals {
-  services = {
-    data_ingestion = {
-      name        = "data-ingestion-service"
-      permissions = ["api:write"]
-    }
-    monitoring = {
-      name        = "monitoring-service"
-      permissions = ["api:read"]
-    }
-    exports = {
-      name        = "export-service"
-      permissions = ["api:read"]
-    }
-  }
-}
-
-resource "arize_api_key" "services" {
-  for_each    = local.services
-  name        = each.value.name
-  permissions = each.value.permissions
-}
-
-# Save keys to a secure location (e.g., AWS Secrets Manager)
-output "service_api_keys" {
-  value = {
-    for service, key in arize_api_key.services : service => {
-      id   = key.id
-      name = key.name
-      # DO NOT output the actual key - store it separately!
-    }
-  }
-}
-```
-
-### Querying Existing API Keys
-
-```hcl
-data "arize_api_keys" "all" {}
-
-# Find old API keys that should be rotated
-locals {
-  thirty_days_ago = timestamp() - 30 * 24 * 60 * 60
-  
-  old_keys = [
-    for key in data.arize_api_keys.all.api_keys :
-    key if timeadd(key.created_at, "720h") < timestamp()  # Older than 30 days
-  ]
-}
-
-output "keys_needing_rotation" {
-  value = [
-    for key in local.old_keys : {
-      id         = key.id
-      name       = key.name
-      created_at = key.created_at
-    }
-  ]
-}
-```
+The `annotator` role follows the user's account role: users with the Annotator account role can only be annotators in spaces, and other users can't be annotators. Other role changes are made in place.
 
 ---
 
@@ -364,7 +265,7 @@ terraform {
   required_providers {
     arize = {
       source  = "seanlee10/arize"
-      version = "~> 0.0.1"
+      version = "~> 0.3.6"
     }
   }
   
@@ -384,11 +285,17 @@ provider "arize" {}
 variable "environment" {
   type    = string
   default = "dev"
+
+  validation {
+    condition     = contains(["dev", "prod"], var.environment)
+    error_message = "Environment must be dev or prod."
+  }
 }
 
-variable "team_size" {
-  type    = number
-  default = 3
+variable "team_emails" {
+  type        = list(string)
+  default     = []
+  description = "Emails of existing Arize users to add to the space"
 }
 
 # Local variables
@@ -413,26 +320,28 @@ resource "arize_space" "main" {
   private = local.config.space_private
 }
 
-# Create team members from a list
-resource "arize_user" "team" {
-  count = var.team_size
-  
-  email = "user${count.index}@company.com"
-  name  = "Team Member ${count.index + 1}"
+# Look up the team among active users (Arize adds users to spaces only
+# after they accept their invitation)
+data "arize_users" "all" {}
+
+locals {
+  active_user_ids = {
+    for user in data.arize_users.all.users : lower(user.email) => user.id
+    if user.status == "active"
+  }
+  team = {
+    for email in var.team_emails : lower(email) => local.active_user_ids[lower(email)]
+    if contains(keys(local.active_user_ids), lower(email))
+  }
 }
 
 # Add all team members to space
 resource "arize_space_member" "team_access" {
-  count    = length(arize_user.team)
-  space_id = arize_space.main.id
-  user_id  = arize_user.team[count.index].id
-  role     = local.config.user_roles
-}
+  for_each = local.team
 
-# Create service account API key
-resource "arize_api_key" "service" {
-  name        = "${var.environment}-service-account"
-  permissions = ["api:read", "api:write"]
+  space_id = arize_space.main.id
+  user_id  = each.value
+  role     = local.config.user_roles
 }
 
 # Outputs for downstream consumption
@@ -445,13 +354,7 @@ output "space_info" {
 }
 
 output "team_members" {
-  value = [
-    for user in arize_user.team : {
-      id    = user.id
-      email = user.email
-      name  = user.name
-    }
-  ]
+  value = keys(local.team)
 }
 ```
 
@@ -461,12 +364,12 @@ output "team_members" {
 # Get all users from the account
 data "arize_users" "all" {}
 
-# Filter to find a specific user
+# Find a specific user; one() returns null when there is no match
 locals {
-  alice = [
+  alice = one([
     for user in data.arize_users.all.users :
-    user if user.email == "alice@company.com"
-  ][0]
+    user if lower(user.email) == "alice@company.com" && user.status == "active"
+  ])
 }
 
 # Add that user to a new space
@@ -477,8 +380,15 @@ resource "arize_space" "project_a" {
 
 resource "arize_space_member" "alice_project_a" {
   space_id = arize_space.project_a.id
-  user_id  = local.alice.id
+  user_id  = try(local.alice.id, null)
   role     = "admin"
+
+  lifecycle {
+    precondition {
+      condition     = local.alice != null
+      error_message = "alice@company.com isn't an active Arize user."
+    }
+  }
 }
 ```
 
@@ -489,12 +399,6 @@ resource "arize_space_member" "alice_project_a" {
 ### 1. Use Variables for Configuration
 
 ```hcl
-variable "arize_api_key" {
-  type        = string
-  sensitive   = true
-  description = "Arize API Key (use env var ARIZE_API_KEY)"
-}
-
 variable "company_domain" {
   type        = string
   default     = "company.com"
@@ -504,6 +408,7 @@ variable "company_domain" {
 # Then reference in resources
 resource "arize_user" "team" {
   email = "user@${var.company_domain}"
+  name  = "Team User"
 }
 ```
 
@@ -514,7 +419,7 @@ terraform/
 ├── main.tf              # Provider and top-level config
 ├── spaces.tf            # Space resources
 ├── users.tf             # User resources
-├── api_keys.tf          # API key resources
+├── memberships.tf       # Space member resources
 ├── variables.tf         # Input variables
 ├── outputs.tf           # Output values
 └── terraform.tfvars     # Variable values (keep out of git!)
@@ -525,9 +430,9 @@ terraform/
 ```hcl
 locals {
   # Derived values
-  production_users = [
+  company_users = [
     for user in data.arize_users.all.users :
-    user if contains(user.email, "company.com")
+    user if endswith(lower(user.email), "@company.com")
   ]
   
   # Tags/metadata
@@ -540,21 +445,21 @@ locals {
 
 ### 4. Protect Sensitive Information
 
+Pass the Arize API key through the `ARIZE_API_KEY` environment variable (for example from your CI secret store) rather than in `.tf` files. If you pass it as a variable, mark it sensitive and keep it out of git:
+
 ```hcl
-# Store API keys securely
-resource "arize_api_key" "sensitive" {
-  name        = "sensitive-key"
-  permissions = ["api:read", "api:write"]
+variable "arize_api_key" {
+  type        = string
+  sensitive   = true
+  description = "Arize API key (or leave unset and use ARIZE_API_KEY)"
 }
 
-# Mark output as sensitive
-output "api_key" {
-  value     = arize_api_key.sensitive.key
-  sensitive = true
+provider "arize" {
+  api_key = var.arize_api_key
 }
 
-# Use tfvars.example (no actual secrets)
-# But add terraform.tfvars to .gitignore
+# Commit a terraform.tfvars.example without secrets,
+# and add terraform.tfvars to .gitignore
 ```
 
 ### 5. Document Your Configuration
@@ -578,8 +483,9 @@ resource "arize_space" "main" {
 ```bash
 # Before managing existing resources with Terraform:
 # 1. Import them into your state
-terraform import arize_user.existing "user-id-here"
-terraform import arize_space.existing "space-id-here"
+terraform import arize_user.existing "<user_id>"
+terraform import arize_space.existing "<space_id>"
+terraform import arize_space_member.existing "<space_id>:<user_id>"
 
 # 2. Create matching Terraform config
 # 3. Run terraform plan to verify no changes
@@ -594,24 +500,28 @@ terraform plan
 
 ### Onboarding New Team Members
 
-```hcl
-# Create new user
-resource "arize_user" "new_member" {
-  email = "newmember@company.com"
-  name  = "New Member Name"
-}
+Onboarding takes two applies, because Arize adds users to spaces only after they accept their invitation.
 
-# Add to production space
-resource "arize_space_member" "new_to_prod" {
-  space_id = arize_space.production.id
-  user_id  = arize_user.new_member.id
-  role     = "member"
-}
+1. Invite the user and apply; Arize emails them an invitation:
 
-# Terraform plan and apply
-# → User created in Arize
-# → User added to production space automatically
-```
+   ```hcl
+   resource "arize_user" "new_member" {
+     email = "newmember@company.com"
+     name  = "New Member Name"
+   }
+   ```
+
+2. After they accept (`terraform plan` shows their `status` change to `active` and their new ID), add the membership and apply again:
+
+   ```hcl
+   resource "arize_space_member" "new_to_prod" {
+     space_id = arize_space.production.id
+     user_id  = arize_user.new_member.id
+     role     = "member"
+   }
+   ```
+
+Applying the membership before the invitation is accepted fails with "User hasn't accepted the invitation yet"; rerun `terraform apply` after they accept. [Example 2](../examples/02_team_management/) adds members automatically once they're active.
 
 ### Creating Development & Production Environments
 
@@ -638,47 +548,29 @@ resource "arize_space" "prod" {
 # Run with: terraform apply -var="create_prod_space=true"
 ```
 
-### Rotating API Keys
-
-```bash
-# Create new key
-resource "arize_api_key" "new_v2" {
-  name        = "deployment-key-v2"
-  permissions = ["api:read", "api:write"]
-}
-
-# Update your CI/CD system with new key from output
-terraform output deployment_api_key_new
-
-# Once confirmed working, remove old key
-# (Delete the old resource from your Terraform config)
-
-terraform destroy -target=arize_api_key.old_v1
-```
-
 ---
 
 ## Troubleshooting
 
-### Issue: "Space already exists in account"
+### Issue: "User hasn't accepted the invitation yet"
 
-**Solution:** A space with that name already exists. Either:
-1. Import it: `terraform import arize_space.name "space-id"`
-2. Use a unique name in your configuration
+**Solution:** Arize adds users to spaces only after they accept their invitation. Wait until they accept, then run `terraform apply` again.
 
-### Issue: "API key is sensitive - cannot output"
+### Issue: "Not Authorized" when creating a space
 
-**Solution:** Mark outputs as sensitive:
-```hcl
-output "key" {
-  value     = arize_api_key.service.key
-  sensitive = true  # This hides the value from logs
-}
-```
+**Solution:** The API key's user can't create spaces in that organization. The error lists the user's role in each organization; account admins and users with the organization `admin` or `member` role can create spaces.
+
+### Issue: 401 Unauthorized
+
+**Solution:** Check the API key. Keys work only on their own cluster, so EU accounts must set `endpoint = "https://app.eu-west-1a.arize.com/graphql"`.
+
+### Issue: Managing a space created in the Arize UI
+
+**Solution:** Import it: `terraform import arize_space.name "<space_id>"`, then run `terraform plan` and adjust the configuration until it shows no changes.
 
 ### Issue: "User not found" when importing
 
-**Solution:** Get the correct user ID:
+**Solution:** Get the correct user ID from the `arize_users` data source, or list users directly:
 ```bash
 # List all users to find the correct ID
 curl -X POST https://app.arize.com/graphql \
@@ -692,6 +584,6 @@ curl -X POST https://app.arize.com/graphql \
 ## Next Steps
 
 - Review [CLAUDE.md](../CLAUDE.md) for architecture details
-- Check [examples/](../examples/) for more configuration samples
+- Check [examples/](../examples/) for more configuration samples (one directory per example)
 - Read the [README.md](../README.md) for installation instructions
 - Explore [Terraform Registry](https://registry.terraform.io) for provider best practices

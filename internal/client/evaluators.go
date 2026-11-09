@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -142,10 +143,14 @@ func (c *Client) GetEvaluator(ctx context.Context, spaceID, evaluatorID string) 
 
 	// Arize answers node(id) for a deleted evaluator with "Unauthorized access"
 	// rather than null, so confirm absence via the space listing before reporting it gone.
-	if err != nil && !strings.Contains(err.Error(), "Unauthorized") {
+	if err != nil && !strings.Contains(err.Error(), "Unauthorized") && !isNotFound(err) {
 		return nil, fmt.Errorf("failed to get evaluator: %w", err)
 	}
 	evaluators, listErr := c.ListEvaluators(ctx, spaceID)
+	if errors.Is(listErr, ErrSpaceNotFound) {
+		// The space was deleted, and its evaluators with it.
+		return nil, ErrEvaluatorNotFound
+	}
 	if listErr != nil {
 		return nil, fmt.Errorf("failed to get evaluator: %w", listErr)
 	}
@@ -190,10 +195,13 @@ query ListEvaluators($spaceId: ID!, $first: Int!, $after: String) {
 		}
 		vars := map[string]interface{}{"spaceId": spaceID, "first": 50, "after": after}
 		if err := c.execute(ctx, query, vars, &result); err != nil {
+			if isNotFound(err) {
+				return nil, fmt.Errorf("space %s: %w", spaceID, ErrSpaceNotFound)
+			}
 			return nil, fmt.Errorf("failed to list evaluators: %w", err)
 		}
 		if result.Node == nil {
-			return nil, fmt.Errorf("space %s not found", spaceID)
+			return nil, fmt.Errorf("space %s: %w", spaceID, ErrSpaceNotFound)
 		}
 		for _, edge := range result.Node.Evaluators.Edges {
 			if edge.Node != nil {
@@ -290,4 +298,11 @@ mutation DeleteEvaluator($input: DeleteEvaluatorMutationInput!) {
 		return fmt.Errorf("failed to delete evaluator %s: API reported failure", evaluatorID)
 	}
 	return nil
+}
+
+// isNotFound reports whether err is a GraphQL NOT_FOUND error, which Arize
+// returns for node(id) on a deleted object.
+func isNotFound(err error) bool {
+	var gqlErr *GraphQLError
+	return errors.As(err, &gqlErr) && gqlErr.Extensions.Code == "NOT_FOUND"
 }

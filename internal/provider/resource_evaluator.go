@@ -307,10 +307,14 @@ func (r *EvaluatorResource) checkIntegrationName(ctx context.Context, req resour
 		return
 	}
 
-	// An unchanged name keeps its ID; it's checked by Read on refresh.
+	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("space_id"), &spaceID)...)
+
+	// An unchanged name in the same space keeps its ID; it's checked by Read
+	// on refresh. In another space the name may mean another integration.
 	if !req.State.Raw.IsNull() {
-		var prior, priorID types.String
-		if diags := req.State.GetAttribute(ctx, attr, &prior); !diags.HasError() && prior.Equal(value) {
+		var prior, priorID, priorSpace types.String
+		resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("space_id"), &priorSpace)...)
+		if diags := req.State.GetAttribute(ctx, attr, &prior); !diags.HasError() && prior.Equal(value) && priorSpace.Equal(spaceID) {
 			if byName {
 				if d := req.State.GetAttribute(ctx, integrationIDPath, &priorID); !d.HasError() {
 					resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, integrationIDPath, priorID)...)
@@ -320,7 +324,17 @@ func (r *EvaluatorResource) checkIntegrationName(ctx context.Context, req resour
 		}
 	}
 
-	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("space_id"), &spaceID)...)
+	if spaceID.IsUnknown() {
+		// The space is created in this apply, so a name that's ambiguous
+		// across the account may still be unique in the space: only check
+		// that some integration has it. Create resolves it in the space.
+		if err := integrationNameExists(ctx, r.restClient, value.ValueString()); err != nil {
+			resp.Diagnostics.AddAttributeError(attr, "Invalid "+attrName, err.Error())
+		} else if byName {
+			resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, integrationIDPath, types.StringUnknown())...)
+		}
+		return
+	}
 	if _, err := resolveIntegrationID(ctx, r.restClient, value.ValueString(), spaceID.ValueString()); err != nil {
 		resp.Diagnostics.AddAttributeError(attr, "Invalid "+attrName, err.Error())
 		return
@@ -556,6 +570,10 @@ func (r *EvaluatorResource) Delete(ctx context.Context, req resource.DeleteReque
 		return
 	}
 	if err := r.client.DeleteEvaluator(ctx, state.ID.ValueString()); err != nil {
+		// Already gone (deleted outside Terraform, or with its space) is fine.
+		if _, getErr := r.client.GetEvaluator(ctx, state.ID.ValueString(), state.SpaceID.ValueString()); errors.Is(getErr, client.ErrEvaluatorNotFound) {
+			return
+		}
 		resp.Diagnostics.AddError("Failed to delete evaluator", err.Error())
 	}
 }

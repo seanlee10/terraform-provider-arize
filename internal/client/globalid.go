@@ -10,6 +10,7 @@ import (
 const (
 	GlobalIDTypeOrganization   = "AccountOrganization"
 	GlobalIDTypeLLMIntegration = "LlmIntegration"
+	GlobalIDTypeInvitation     = "AccountInvitation"
 )
 
 // GlobalIDType returns the type encoded in an Arize global ID, or false if s

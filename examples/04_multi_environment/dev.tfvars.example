@@ -1,0 +1,5 @@
+# Copy to dev.tfvars and run: terraform apply -var-file=dev.tfvars
+environment = "dev"
+team_emails = [
+  "alice@company.com",
+]
