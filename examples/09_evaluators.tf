@@ -22,7 +22,7 @@ variable "space_id" {
 }
 
 variable "llm_integration_id" {
-  description = "LLM integration used as the judge (Settings -> AI Providers in Arize)"
+  description = "Name or ID of the LLM integration used as the judge (Settings -> AI Providers in Arize)"
   type        = string
 }
 
@@ -57,7 +57,7 @@ resource "arize_evaluator" "correctness" {
     direction            = "maximize"
     include_explanations = true
 
-    # Optional: omit to use the space's default LLM integration
+    # Optional: omit the whole llm block to use the space's default LLM integration
     llm = {
       integration_id        = var.llm_integration_id
       model_name            = "gpt-4o"

@@ -53,9 +53,10 @@ resource "arize_space" "ml_models" {
   name    = "ml-models"
   private = false
 
-  # Optional: defaults to the account's first organization. The ID is the
-  # segment after /organizations/ in the Arize UI URL.
-  organization_id = "QWNjb3VudE9yZ2FuaXphdGlvbjox"
+  # Optional: defaults to the account's first organization. Takes the
+  # organization's name or its ID (the segment after /organizations/ in the
+  # Arize UI URL, or from `ax organizations list`).
+  organization_id = "Experimentation"
 }
 
 # Add user to space
@@ -248,8 +249,11 @@ resource "arize_evaluator" "correctness" {
     classification_choices = { correct = 1, incorrect = 0 }
     direction              = "maximize"
 
+    # Optional: omit the whole llm block to use the space's default LLM
+    # integration. integration_id takes the integration's name as shown in
+    # Arize (Settings -> AI Providers) or its ID (`ax ai-integrations list`).
     llm = {
-      integration_id = var.llm_integration_id  # omit to use the space default
+      integration_id = var.llm_integration_id
       model_name     = "gpt-4o"
     }
   }

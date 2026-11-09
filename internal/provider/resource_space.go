@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/arize-ai/terraform-provider-arize/internal/client"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
@@ -15,7 +17,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-var _ resource.Resource = (*SpaceResource)(nil)
+var (
+	_ resource.Resource               = (*SpaceResource)(nil)
+	_ resource.ResourceWithModifyPlan = (*SpaceResource)(nil)
+)
 
 func NewSpaceResource() resource.Resource {
 	return &SpaceResource{}
@@ -79,12 +84,15 @@ func (r *SpaceResource) Schema(ctx context.Context, req resource.SchemaRequest, 
 				},
 			},
 			"organization_id": schema.StringAttribute{
-				MarkdownDescription: "The ID of the organization to create the space in. Defaults to the account's first organization. Changing this forces a new space.",
-				Optional:            true,
-				Computed:            true,
+				MarkdownDescription: "The ID or name of the organization to create the space in (IDs are listed by `ax organizations list`). " +
+					"Defaults to the account's first organization. Changing this forces a new space.",
+				Optional: true,
+				Computed: true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
-					stringplanmodifier.RequiresReplace(),
+					stringplanmodifier.RequiresReplaceIf(organizationChanged,
+						"A different organization replaces the space.",
+						"A different organization replaces the space."),
 				},
 			},
 			"organization": schema.SingleNestedAttribute{
@@ -132,16 +140,21 @@ func (r *SpaceResource) Create(ctx context.Context, req resource.CreateRequest, 
 	}
 
 	orgID := data.OrganizationID.ValueString()
-	if data.OrganizationID.IsUnknown() || orgID == "" {
+	defaulted := data.OrganizationID.IsUnknown() || orgID == ""
+	var err error
+	if defaulted {
 		// No organization configured: use the account's first organization
-		var err error
 		orgID, err = r.getDefaultOrganizationID(ctx)
 		if err != nil {
 			resp.Diagnostics.AddError("Failed to get organization", err.Error())
 			return
 		}
+		data.OrganizationID = types.StringValue(orgID)
+	} else if orgID, err = resolveOrganizationID(ctx, r.client, orgID); err != nil {
+		// A name is sent as its ID; state keeps the configured value.
+		resp.Diagnostics.AddAttributeError(path.Root("organization_id"), "Invalid organization_id", err.Error())
+		return
 	}
-	data.OrganizationID = types.StringValue(orgID)
 
 	input := &client.CreateSpaceInput{
 		Name:                  data.Name.ValueString(),
@@ -152,7 +165,14 @@ func (r *SpaceResource) Create(ctx context.Context, req resource.CreateRequest, 
 
 	space, err := r.client.CreateSpace(ctx, input)
 	if err != nil {
-		resp.Diagnostics.AddError("Failed to create space", err.Error())
+		detail := err.Error()
+		if client.IsUnauthorized(err) {
+			// Arize says only "Not Authorized"; explain who tried, where.
+			if access, aerr := r.client.GetOrganizationAccess(ctx); aerr == nil {
+				detail = spaceCreateUnauthorizedDetail(orgID, defaulted, access)
+			}
+		}
+		resp.Diagnostics.AddError("Failed to create space", detail)
 		return
 	}
 
@@ -162,7 +182,7 @@ func (r *SpaceResource) Create(ctx context.Context, req resource.CreateRequest, 
 
 	// Map organization if present
 	if space.Organization != nil {
-		data.OrganizationID = types.StringValue(space.Organization.ID)
+		data.OrganizationID = organizationIDState(data.OrganizationID, space.Organization)
 		orgMap := map[string]attr.Value{
 			"id":   types.StringValue(space.Organization.ID),
 			"name": types.StringValue(space.Organization.Name),
@@ -205,7 +225,7 @@ func (r *SpaceResource) Read(ctx context.Context, req resource.ReadRequest, resp
 
 	// Map organization if present
 	if space.Organization != nil {
-		data.OrganizationID = types.StringValue(space.Organization.ID)
+		data.OrganizationID = organizationIDState(data.OrganizationID, space.Organization)
 		orgMap := map[string]attr.Value{
 			"id":   types.StringValue(space.Organization.ID),
 			"name": types.StringValue(space.Organization.Name),
@@ -243,7 +263,11 @@ func (r *SpaceResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	plan.ID = state.ID
 	plan.UUID = state.UUID
 	plan.CreatedAt = state.CreatedAt
-	plan.OrganizationID = state.OrganizationID
+	// organization_id can only change in place between the ID and the name
+	// of the same organization (see organizationChanged); keep what's planned.
+	if plan.OrganizationID.IsUnknown() {
+		plan.OrganizationID = state.OrganizationID
+	}
 	plan.Organization = state.Organization
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -258,6 +282,57 @@ func (r *SpaceResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 	if err := r.restClient.DeleteSpace(ctx, data.ID.ValueString()); err != nil {
 		resp.Diagnostics.AddError("Failed to delete space", err.Error())
 		return
+	}
+}
+
+// organizationIDState is the organization_id to store: the configured value
+// when it names or identifies the space's organization (so a name in the
+// configuration doesn't show a change), otherwise the organization's ID.
+func organizationIDState(current types.String, org *client.Org) types.String {
+	v := current.ValueString()
+	if !current.IsNull() && !current.IsUnknown() && (v == org.ID || strings.EqualFold(v, org.Name)) {
+		return current
+	}
+	return types.StringValue(org.ID)
+}
+
+// organizationChanged reports whether a new organization_id points to a
+// different organization than the space's. Switching between the ID and the
+// name of the same organization doesn't replace the space.
+func organizationChanged(ctx context.Context, req planmodifier.StringRequest, resp *stringplanmodifier.RequiresReplaceIfFuncResponse) {
+	var org struct {
+		ID   types.String `tfsdk:"id"`
+		Name types.String `tfsdk:"name"`
+	}
+	resp.RequiresReplace = true
+	if diags := req.State.GetAttribute(ctx, path.Root("organization"), &org); diags.HasError() || org.ID.IsNull() {
+		return
+	}
+	v := req.PlanValue.ValueString()
+	if v == org.ID.ValueString() || strings.EqualFold(v, org.Name.ValueString()) {
+		resp.RequiresReplace = false
+	}
+}
+
+// ModifyPlan checks at plan time that a configured organization name exists.
+func (r *SpaceResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() || r.client == nil {
+		return
+	}
+	var org types.String
+	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("organization_id"), &org)...)
+	if org.IsNull() || org.IsUnknown() || org.ValueString() == "" || isArizeID(org.ValueString()) {
+		return
+	}
+	if !req.State.Raw.IsNull() {
+		var prior types.String
+		resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("organization_id"), &prior)...)
+		if prior.Equal(org) {
+			return // unchanged; already resolved when the space was created
+		}
+	}
+	if _, err := resolveOrganizationID(ctx, r.client, org.ValueString()); err != nil {
+		resp.Diagnostics.AddAttributeError(path.Root("organization_id"), "Invalid organization_id", err.Error())
 	}
 }
 

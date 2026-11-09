@@ -90,9 +90,19 @@ Verified against the live API:
 
 ### Spaces (`resource_space.go`)
 
-- An account can have several organizations; `organization_id` picks one (default: the first from `account.organizations`) and forces replacement on change.
+- An account can have several organizations; `organization_id` picks one by ID or name (default: the first from `account.organizations`). Changing it replaces the space, unless the new value is the ID or name of the same organization (`organizationChanged`).
 - An unset description reads back as `""`; Read keeps it null, otherwise every plan shows an update.
 - Update uses REST `PATCH /v2/spaces/{id}` and always sends `name`, `description`, and `is_private`; a `null` description clears it (the API rejects `""`). Verified against the live API.
+- `createSpace` returns only `Not Authorized` (`extensions.code: UNAUTHORIZED`) for any organization the key can't create spaces in, including a nonexistent one. Create then looks up `viewer.user` (email, `accountRole`) and each organization's `accountOrganizationUsers(search: email)` (partial match, so compare user IDs) and reports the user's role in every organization (`space_create_error.go`). Account admins are listed as `ACCOUNT_ADMIN` with no role.
+- GraphQL `account.organizations` and REST `/v2/organizations` return organizations in different orders, so "the first organization" isn't stable across APIs.
+- Who can create spaces (from the Arize source, `isAccountOrgMember` / `hasHybridOrgMemberAccess`): account admins in any organization of their account, and users with the `admin` or `member` organization role (legacy role or predefined role binding); read-only users can't. An organization from another account is always refused.
+
+### IDs and Names (`name_resolution.go`, `client/globalid.go`, `client/lookup.go`)
+
+- Arize IDs are Relay global IDs: base64 of `Type:number:suffix` (e.g. `LlmIntegration:227:NVbs`). A value that doesn't decode to that form (a name, a UUID, a name or ID base64-encoded by hand) fails with `Relay global id is invalid`; a well-formed but unknown ID fails with `Global ID is invalid`.
+- `arize_space.organization_id` and `arize_evaluator` `llm.integration_id` accept a name or an ID, like the ax CLI. State keeps the configured value; the ID is looked up when sent. ModifyPlan checks new names at plan time, and Read keeps the name while it still resolves to the ID Arize returns.
+- Names match exactly first, then case-insensitively; several matches is an error. Errors list the available names and IDs.
+- REST `GET /v2/ai-integrations` filters by `name` (case-insensitive substring) and `space_id` (integrations available to that space; scopings can limit an integration to organizations or spaces), paged with `cursor` / `pagination.next_cursor`.
 
 ### Space Roles
 
@@ -140,6 +150,7 @@ API behavior verified against the live API, which the resource depends on:
 - Evaluator names and result column names (`config.name`) are unique per space.
 - `node(id)` on a deleted evaluator returns "Unauthorized access", not null; `GetEvaluator` confirms absence via `Space.evaluators` before returning `ErrEvaluatorNotFound`.
 - `Space.evaluators(first: 100)` exceeds the query complexity limit (1000); page size is 50.
+- Arize doesn't check `modelName` against the integration's model list when an evaluator is created.
 - `llmConfig` input requires all four fields (`integrationId`, `modelName`, `invocationParameters`, `providerParameters`); the server rewrites invocation parameters per provider, so Read keeps the configured values.
 - `rails` is ignored by the provider: string input is stored as a single literal element; labels come from `classificationChoices`.
 - Code `spanAttributes` is derived from the `evaluate()` signature (input is ignored), so it is computed.
