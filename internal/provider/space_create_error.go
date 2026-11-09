@@ -9,13 +9,14 @@ import (
 
 // spaceCreateUnauthorizedDetail explains a "Not Authorized" from createSpace:
 // which organization was used and why, who the API key belongs to, and their
-// role in each organization the key can see.
-func spaceCreateUnauthorizedDetail(orgID string, defaulted bool, access *client.OrganizationAccess) string {
+// role in each organization the key can see. source is the attribute that
+// chose the organization, or "" when it was the default.
+func spaceCreateUnauthorizedDetail(orgID, source string, access *client.OrganizationAccess) string {
 	var b strings.Builder
 
-	how := "set by organization_id"
-	if defaulted {
-		how = "used by default because organization_id isn't set"
+	how := "set by " + source
+	if source == "" {
+		how = "used by default because organization_id and organization_name aren't set"
 	}
 	var target *client.OrganizationRole
 	for i := range access.Organizations {

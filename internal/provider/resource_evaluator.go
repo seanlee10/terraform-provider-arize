@@ -70,6 +70,7 @@ type TemplateEvaluatorModel struct {
 
 type EvaluatorLLMModel struct {
 	IntegrationID        types.String `tfsdk:"integration_id"`
+	IntegrationName      types.String `tfsdk:"integration_name"`
 	ModelName            types.String `tfsdk:"model_name"`
 	InvocationParameters types.String `tfsdk:"invocation_parameters"`
 	ProviderParameters   types.String `tfsdk:"provider_parameters"`
@@ -194,8 +195,18 @@ func (r *EvaluatorResource) Schema(ctx context.Context, req resource.SchemaReque
 						Optional:            true,
 						Attributes: map[string]schema.Attribute{
 							"integration_id": schema.StringAttribute{
-								MarkdownDescription: "ID or name of an LLM integration available to the space (IDs are listed by `ax ai-integrations list`).",
-								Required:            true,
+								MarkdownDescription: "ID of an LLM integration available to the space (listed by `ax ai-integrations list`). " +
+									"Set this or `integration_name`; with `integration_name`, the looked-up ID is stored here.",
+								Optional: true,
+								Computed: true,
+								Validators: []validator.String{
+									stringvalidator.ExactlyOneOf(path.MatchRelative().AtParent().AtName("integration_name")),
+								},
+							},
+							"integration_name": schema.StringAttribute{
+								MarkdownDescription: "Name of an LLM integration available to the space, as shown in Arize (Settings -> AI Providers). " +
+									"Set this or `integration_id`.",
+								Optional: true,
 							},
 							"model_name": schema.StringAttribute{
 								MarkdownDescription: "Model name, e.g. `gpt-4o` or `claude-sonnet-5-5`.",
@@ -270,7 +281,10 @@ func (r *EvaluatorResource) ModifyPlan(ctx context.Context, req resource.ModifyP
 	}
 }
 
-var integrationIDPath = path.Root("template").AtName("llm").AtName("integration_id")
+var (
+	integrationIDPath   = path.Root("template").AtName("llm").AtName("integration_id")
+	integrationNamePath = path.Root("template").AtName("llm").AtName("integration_name")
+)
 
 // checkIntegrationName checks at plan time that a configured integration
 // name exists.
@@ -278,23 +292,53 @@ func (r *EvaluatorResource) checkIntegrationName(ctx context.Context, req resour
 	if r.restClient == nil {
 		return
 	}
-	var integration, spaceID types.String
-	if diags := req.Plan.GetAttribute(ctx, integrationIDPath, &integration); diags.HasError() {
+	var id, name, spaceID types.String
+	if diags := req.Plan.GetAttribute(ctx, integrationIDPath, &id); diags.HasError() {
 		return // no template or llm block
 	}
-	if integration.IsNull() || integration.IsUnknown() || isArizeID(integration.ValueString()) {
+	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, integrationNamePath, &name)...)
+
+	byName := !name.IsNull()
+	attr, attrName, value := integrationIDPath, "integration_id", id
+	if byName {
+		attr, attrName, value = integrationNamePath, "integration_name", name
+	}
+	if value.IsNull() || value.IsUnknown() || !byName && isArizeID(value.ValueString()) {
 		return
 	}
+
+	// An unchanged name keeps its ID; it's checked by Read on refresh.
 	if !req.State.Raw.IsNull() {
-		var prior types.String
-		if diags := req.State.GetAttribute(ctx, integrationIDPath, &prior); !diags.HasError() && prior.Equal(integration) {
-			return // unchanged; checked by Read on refresh
+		var prior, priorID types.String
+		if diags := req.State.GetAttribute(ctx, attr, &prior); !diags.HasError() && prior.Equal(value) {
+			if byName {
+				if d := req.State.GetAttribute(ctx, integrationIDPath, &priorID); !d.HasError() {
+					resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, integrationIDPath, priorID)...)
+				}
+			}
+			return
 		}
 	}
+
 	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("space_id"), &spaceID)...)
-	if _, err := resolveIntegrationID(ctx, r.restClient, integration.ValueString(), spaceID.ValueString()); err != nil {
-		resp.Diagnostics.AddAttributeError(integrationIDPath, "Invalid integration_id", err.Error())
+	if _, err := resolveIntegrationID(ctx, r.restClient, value.ValueString(), spaceID.ValueString()); err != nil {
+		resp.Diagnostics.AddAttributeError(attr, "Invalid "+attrName, err.Error())
+		return
 	}
+	if byName {
+		// A new name: the ID is looked up on apply.
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, integrationIDPath, types.StringUnknown())...)
+	}
+}
+
+// addIntegrationError reports a failed integration lookup on the attribute
+// that holds the name.
+func addIntegrationError(diags *diag.Diagnostics, m *EvaluatorResourceModel, err error) {
+	if m.Template != nil && m.Template.LLM != nil && !m.Template.LLM.IntegrationName.IsNull() {
+		diags.AddAttributeError(integrationNamePath, "Invalid integration_name", err.Error())
+		return
+	}
+	diags.AddAttributeError(integrationIDPath, "Invalid integration_id", err.Error())
 }
 
 // resolveIntegration replaces an integration name in config with its ID
@@ -315,18 +359,44 @@ func (r *EvaluatorResource) resolveIntegration(ctx context.Context, config clien
 	return config, nil
 }
 
-// keepIntegrationName restores a configured integration name after Read
-// replaced it with the ID Arize returns, as long as the name still resolves
-// to that ID. Otherwise the ID stays, showing the change.
-func (r *EvaluatorResource) keepIntegrationName(ctx context.Context, m *EvaluatorResourceModel, prior types.String) {
-	if prior.IsNull() || prior.IsUnknown() || isArizeID(prior.ValueString()) ||
-		m.Template == nil || m.Template.LLM == nil {
+// keepIntegrationName carries configured integration names over a Read,
+// which only gets the integration's ID from Arize.
+//   - integration_name is kept while it still resolves to that ID; otherwise
+//     it becomes the name of the integration Arize uses, showing the change.
+//   - A name in integration_id (accepted since v0.3.4) is kept the same way;
+//     otherwise the ID stays.
+//
+// On a failed lookup the configured value is kept rather than show a
+// spurious change.
+func (r *EvaluatorResource) keepIntegrationName(ctx context.Context, m *EvaluatorResourceModel, prior *EvaluatorLLMModel) {
+	if prior == nil || m.Template == nil || m.Template.LLM == nil {
 		return
 	}
-	id, err := resolveIntegrationID(ctx, r.restClient, prior.ValueString(), m.SpaceID.ValueString())
-	if err != nil || id == m.Template.LLM.IntegrationID.ValueString() {
-		// On a failed lookup keep the name rather than show a spurious change.
-		m.Template.LLM.IntegrationID = prior
+	llm := m.Template.LLM
+	serverID := llm.IntegrationID.ValueString()
+	spaceID := m.SpaceID.ValueString()
+
+	if name := prior.IntegrationName; !name.IsNull() && !name.IsUnknown() {
+		llm.IntegrationName = name
+		id, err := resolveIntegrationID(ctx, r.restClient, name.ValueString(), spaceID)
+		if err != nil || id == serverID {
+			return
+		}
+		if all, err := r.restClient.ListAIIntegrations(ctx, "", ""); err == nil {
+			for _, it := range all {
+				if it.ID == serverID {
+					llm.IntegrationName = types.StringValue(it.Name)
+				}
+			}
+		}
+		return
+	}
+
+	if v := prior.IntegrationID; !v.IsNull() && !v.IsUnknown() && !isArizeID(v.ValueString()) {
+		id, err := resolveIntegrationID(ctx, r.restClient, v.ValueString(), spaceID)
+		if err != nil || id == serverID {
+			llm.IntegrationID = v
+		}
 	}
 }
 
@@ -365,7 +435,7 @@ func (r *EvaluatorResource) Create(ctx context.Context, req resource.CreateReque
 
 	config, err := r.resolveIntegration(ctx, config, plan.SpaceID.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddAttributeError(integrationIDPath, "Invalid integration_id", err.Error())
+		addIntegrationError(&resp.Diagnostics, &plan, err)
 		return
 	}
 
@@ -405,12 +475,13 @@ func (r *EvaluatorResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 
-	priorIntegration := types.StringNull()
+	var priorLLM *EvaluatorLLMModel
 	if state.Template != nil && state.Template.LLM != nil {
-		priorIntegration = state.Template.LLM.IntegrationID
+		l := *state.Template.LLM
+		priorLLM = &l
 	}
 	resp.Diagnostics.Append(applyEvaluator(ctx, &state, evaluator, true)...)
-	r.keepIntegrationName(ctx, &state, priorIntegration)
+	r.keepIntegrationName(ctx, &state, priorLLM)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -434,7 +505,7 @@ func (r *EvaluatorResource) Update(ctx context.Context, req resource.UpdateReque
 	// the ID of the same integration doesn't publish a version.
 	planConfig, err := r.resolveIntegration(ctx, planConfig, plan.SpaceID.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddAttributeError(integrationIDPath, "Invalid integration_id", err.Error())
+		addIntegrationError(&resp.Diagnostics, &plan, err)
 		return
 	}
 	if resolved, err := r.resolveIntegration(ctx, stateConfig, state.SpaceID.ValueString()); err == nil {
@@ -522,8 +593,13 @@ func buildEvaluatorConfig(ctx context.Context, m *EvaluatorResourceModel) (clien
 			diags.Append(t.ClassificationChoices.ElementsAs(ctx, &input.ClassificationChoices, false)...)
 		}
 		if t.LLM != nil {
+			// integration_name, or a planned integration_id still to be looked up.
+			integration := t.LLM.IntegrationID.ValueString()
+			if t.LLM.IntegrationID.IsUnknown() || integration == "" {
+				integration = t.LLM.IntegrationName.ValueString()
+			}
 			input.LlmConfig = &client.LlmConfigInput{
-				IntegrationID:        t.LLM.IntegrationID.ValueString(),
+				IntegrationID:        integration,
 				ModelName:            t.LLM.ModelName.ValueString(),
 				InvocationParameters: parseJSONObject(t.LLM.InvocationParameters, "template.llm.invocation_parameters", &diags),
 				ProviderParameters:   parseJSONObject(t.LLM.ProviderParameters, "template.llm.provider_parameters", &diags),
@@ -623,6 +699,7 @@ func applyEvaluator(ctx context.Context, m *EvaluatorResourceModel, e *client.Ev
 			if cfg.LlmConfig != nil {
 				t.LLM = &EvaluatorLLMModel{
 					IntegrationID:        types.StringValue(cfg.LlmConfig.IntegrationID),
+					IntegrationName:      types.StringNull(),
 					ModelName:            types.StringValue(cfg.LlmConfig.ModelName),
 					InvocationParameters: types.StringNull(),
 					ProviderParameters:   types.StringNull(),
@@ -634,8 +711,14 @@ func applyEvaluator(ctx context.Context, m *EvaluatorResourceModel, e *client.Ev
 				}
 			}
 			m.Template = t
-		} else if prior.Direction.IsUnknown() {
-			prior.Direction = types.StringValue(cfg.Direction)
+		} else {
+			if prior.Direction.IsUnknown() {
+				prior.Direction = types.StringValue(cfg.Direction)
+			}
+			// Looked up from integration_name on apply.
+			if prior.LLM != nil && prior.LLM.IntegrationID.IsUnknown() && cfg.LlmConfig != nil {
+				prior.LLM.IntegrationID = types.StringValue(cfg.LlmConfig.IntegrationID)
+			}
 		}
 		m.Code = nil
 
