@@ -17,11 +17,11 @@ var testAccess = &client.OrganizationAccess{
 }
 
 func TestSpaceCreateUnauthorizedDetail_DefaultOrg(t *testing.T) {
-	got := spaceCreateUnauthorizedDetail("o1", true, testAccess)
+	got := spaceCreateUnauthorizedDetail("o1", "", testAccess)
 
 	for _, want := range []string{
 		`organization "Main" (o1)`,
-		"organization_id isn't set",
+		"organization_id and organization_name aren't set",
 		"jane@x.com (account role: member)",
 		`role "member" in that organization`,
 		`- "Team" (o2): admin`,
@@ -35,7 +35,7 @@ func TestSpaceCreateUnauthorizedDetail_DefaultOrg(t *testing.T) {
 }
 
 func TestSpaceCreateUnauthorizedDetail_ConfiguredOrgNotVisible(t *testing.T) {
-	got := spaceCreateUnauthorizedDetail("zzz", false, testAccess)
+	got := spaceCreateUnauthorizedDetail("zzz", "organization_id", testAccess)
 
 	for _, want := range []string{"organization zzz", "set by organization_id", "isn't one of the organizations this API key can see"} {
 		if !strings.Contains(got, want) {
@@ -48,7 +48,7 @@ func TestSpaceCreateUnauthorizedDetail_AccountAdmin(t *testing.T) {
 	access := &client.OrganizationAccess{UserEmail: "a@x.com", AccountRole: "admin",
 		Organizations: []client.OrganizationRole{{ID: "o1", Name: "Main", Membership: "ACCOUNT_ADMIN"}}}
 
-	got := spaceCreateUnauthorizedDetail("o1", false, access)
+	got := spaceCreateUnauthorizedDetail("o1", "organization_name", access)
 
 	if !strings.Contains(got, "an account admin") {
 		t.Errorf("detail should say the user is an account admin:\n%s", got)

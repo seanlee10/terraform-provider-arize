@@ -90,7 +90,7 @@ Verified against the live API:
 
 ### Spaces (`resource_space.go`)
 
-- An account can have several organizations; `organization_id` picks one by ID or name (default: the first from `account.organizations`). Changing it replaces the space, unless the new value is the ID or name of the same organization (`organizationChanged`).
+- An account can have several organizations; `organization_id` or `organization_name` picks one (default: the first from `account.organizations`). Changing it replaces the space, unless the new value is the ID or name of the same organization (`organizationChanged`, `planOrganizationName`).
 - An unset description reads back as `""`; Read keeps it null, otherwise every plan shows an update.
 - Update uses REST `PATCH /v2/spaces/{id}` and always sends `name`, `description`, and `is_private`; a `null` description clears it (the API rejects `""`). Verified against the live API.
 - `createSpace` returns only `Not Authorized` (`extensions.code: UNAUTHORIZED`) for any organization the key can't create spaces in, including a nonexistent one. Create then looks up `viewer.user` (email, `accountRole`) and each organization's `accountOrganizationUsers(search: email)` (partial match, so compare user IDs) and reports the user's role in every organization (`space_create_error.go`). Account admins are listed as `ACCOUNT_ADMIN` with no role.
@@ -100,7 +100,10 @@ Verified against the live API:
 ### IDs and Names (`name_resolution.go`, `client/globalid.go`, `client/lookup.go`)
 
 - Arize IDs are Relay global IDs: base64 of `Type:number:suffix` (e.g. `LlmIntegration:227:NVbs`). A value that doesn't decode to that form (a name, a UUID, a name or ID base64-encoded by hand) fails with `Relay global id is invalid`; a well-formed but unknown ID fails with `Global ID is invalid`.
-- `arize_space.organization_id` and `arize_evaluator` `llm.integration_id` accept a name or an ID, like the ax CLI. State keeps the configured value; the ID is looked up when sent. ModifyPlan checks new names at plan time, and Read keeps the name while it still resolves to the ID Arize returns.
+- `arize_evaluator` `llm` takes exactly one of `integration_id` and `integration_name`. With a name, `integration_id` is Computed: ModifyPlan keeps the prior ID while the name is unchanged and marks it unknown for a new name; apply stores the looked-up ID. Read keeps the name while it resolves to the ID Arize returns, otherwise shows the actual integration's name.
+- `arize_space` takes `organization_id` or `organization_name` (ConflictsWith; neither = first organization). With a name, ModifyPlan plans the organization's ID (from state while the name matches the space's organization, case-insensitively) and adds a replace when it resolves to a different organization. Read keeps the name while it matches, otherwise sets the actual organization's name.
+- Since v0.3.4, `organization_id` and `integration_id` also accept a name in the ID attribute. State keeps the configured value; the ID is looked up when sent, and Read keeps the name while it still resolves to the ID Arize returns.
+- ModifyPlan checks new names at plan time.
 - Names match exactly first, then case-insensitively; several matches is an error. Errors list the available names and IDs.
 - REST `GET /v2/ai-integrations` filters by `name` (case-insensitive substring) and `space_id` (integrations available to that space; scopings can limit an integration to organizations or spaces), paged with `cursor` / `pagination.next_cursor`.
 
